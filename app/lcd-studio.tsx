@@ -312,6 +312,11 @@ function GeometryGuide({ appearance }: { appearance: LcdAppearance }) {
   const sampleRow = 3;
   const sampleX = originX + sampleColumn * pitchX;
   const sampleY = originY + sampleRow * pitchY;
+  const gapStart = sampleX + pixelWidth;
+  const gapEnd = sampleX + pitchX;
+  const gapCenter = (gapStart + gapEnd) / 2;
+  const gapMeasureY = sampleY + pixelHeight + 10;
+  const gapVisualWidth = Math.max(gapEnd - gapStart, 0.8);
   const shadowX = appearance.shadowOffsetMm[0] * scale;
   const shadowY = -appearance.shadowOffsetMm[1] * scale;
   const blur = Math.max(appearance.shadowSoftnessMm * scale, 0.05);
@@ -376,15 +381,26 @@ function GeometryGuide({ appearance }: { appearance: LcdAppearance }) {
           ))}
         </g>
 
+        <rect
+          className="guide-gap-highlight"
+          x={gapCenter - gapVisualWidth / 2}
+          y={sampleY - 2}
+          width={gapVisualWidth}
+          height={pixelHeight + 4}
+          rx="0.4"
+          aria-hidden="true"
+        />
+
         <g className="guide-measurements" aria-hidden="true">
           <path d={`M ${sampleX} ${sampleY - 7} V ${sampleY - 13} H ${sampleX + pixelWidth} V ${sampleY - 7}`} />
           <path d={`M ${sampleX + pixelWidth / 2} ${sampleY - 13} V 24 H 233`} />
 
           <path d={`M ${sampleX - 7} ${sampleY} H ${sampleX - 13} V ${sampleY + pixelHeight} H ${sampleX - 7}`} />
           <path d={`M ${sampleX - 13} ${sampleY + pixelHeight / 2} H 44 V 101`} />
-
-          <path d={`M ${sampleX + pixelWidth} ${sampleY + pixelHeight / 2} H ${sampleX + pitchX}`} />
-          <path d={`M ${sampleX + pixelWidth + appearance.gapMm * scale / 2} ${sampleY + pixelHeight / 2} H 258 V 107`} />
+        </g>
+        <g className="guide-gap-measurement" aria-hidden="true">
+          <path d={`M ${gapStart} ${sampleY + pixelHeight + 3} V ${gapMeasureY} H ${gapEnd} V ${sampleY + pixelHeight + 3}`} />
+          <path d={`M ${gapCenter} ${gapMeasureY} H 258 V 132`} />
         </g>
       </svg>
 

@@ -230,6 +230,19 @@
   stroke-width: 1;
 }
 
+.guide-gap-highlight {
+  fill: #d7ff45;
+  opacity: 0.56;
+}
+
+.guide-gap-measurement {
+  fill: none;
+  stroke: rgb(16 20 17 / 82%);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.4;
+}
+
 .guide-callout {
   position: absolute;
   z-index: 1;
@@ -276,7 +289,7 @@
 }
 
 .guide-gap {
-  top: 5.55rem;
+  top: 7.15rem;
   right: 0.35rem;
 }
 
