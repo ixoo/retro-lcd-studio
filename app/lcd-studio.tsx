@@ -156,6 +156,16 @@ const LCD_TEXTURE_PRESETS: Array<{ id: LcdTexture; label: string }> = [
   { id: 'aged', label: 'Aged film' },
 ];
 
+const GEOMETRY_GLYPH = [
+  '01110',
+  '10001',
+  '10001',
+  '11111',
+  '10001',
+  '10001',
+  '10001',
+];
+
 type BitmapParseResult =
   | { rows: string[]; error: null }
   | { rows: null; error: string };
@@ -239,6 +249,7 @@ function nextFrame() {
 }
 
 function ControlSlider({
+  id,
   label,
   value,
   formattedValue,
@@ -247,6 +258,7 @@ function ControlSlider({
   step,
   onChange,
 }: {
+  id: string;
   label: string;
   value: number;
   formattedValue: string;
@@ -262,6 +274,8 @@ function ControlSlider({
         <output>{formattedValue}</output>
       </span>
       <Slider
+        id={id}
+        aria-label={label}
         value={[value]}
         min={min}
         max={max}
@@ -269,6 +283,125 @@ function ControlSlider({
         onValueChange={(nextValue) => onChange(firstSliderValue(nextValue))}
       />
     </label>
+  );
+}
+
+function focusSlider(id: string) {
+  const root = document.getElementById(id);
+  root?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  root?.querySelector<HTMLElement>('[data-slot="slider-thumb"]')?.focus();
+}
+
+function GeometryGuide({ appearance }: { appearance: LcdAppearance }) {
+  const columns = GEOMETRY_GLYPH[0].length;
+  const rows = GEOMETRY_GLYPH.length;
+  const pitchXMm = appearance.pixelWidthMm + appearance.gapMm;
+  const pitchYMm = appearance.pixelHeightMm + appearance.gapMm;
+  const matrixWidthMm = columns * pitchXMm - appearance.gapMm;
+  const matrixHeightMm = rows * pitchYMm - appearance.gapMm;
+  const scale = Math.min(126 / matrixWidthMm, 142 / matrixHeightMm);
+  const pixelWidth = appearance.pixelWidthMm * scale;
+  const pixelHeight = appearance.pixelHeightMm * scale;
+  const pitchX = pitchXMm * scale;
+  const pitchY = pitchYMm * scale;
+  const matrixWidth = matrixWidthMm * scale;
+  const matrixHeight = matrixHeightMm * scale;
+  const originX = 152 - matrixWidth / 2;
+  const originY = 40 + (142 - matrixHeight) / 2;
+  const sampleColumn = 2;
+  const sampleRow = 3;
+  const sampleX = originX + sampleColumn * pitchX;
+  const sampleY = originY + sampleRow * pitchY;
+  const shadowX = appearance.shadowOffsetMm[0] * scale;
+  const shadowY = -appearance.shadowOffsetMm[1] * scale;
+  const blur = Math.max(appearance.shadowSoftnessMm * scale, 0.05);
+  const cells = GEOMETRY_GLYPH.flatMap((row, rowIndex) => (
+    row.split('').map((value, columnIndex) => ({ value, rowIndex, columnIndex }))
+  ));
+  const renderedCells = cells.filter((cell) => (
+    appearance.inverted ? cell.value === '0' : cell.value === '1'
+  ));
+
+  return (
+    <div className="geometry-guide">
+      <svg viewBox="0 0 304 224" aria-labelledby="geometry-guide-title">
+        <title id="geometry-guide-title">Live preview of pixel dimensions and spacing</title>
+        <defs>
+          <filter id="geometry-guide-shadow" x="0" y="0" width="304" height="224" filterUnits="userSpaceOnUse">
+            <feGaussianBlur stdDeviation={blur} />
+          </filter>
+        </defs>
+        <rect className="guide-surface" x="0" y="0" width="304" height="224" rx="10" fill={appearance.background} />
+
+        <g className="guide-grid">
+          {cells.map((cell) => (
+            <rect
+              key={`grid-${cell.rowIndex}-${cell.columnIndex}`}
+              x={originX + cell.columnIndex * pitchX}
+              y={originY + cell.rowIndex * pitchY}
+              width={pixelWidth}
+              height={pixelHeight}
+              rx="0.6"
+            />
+          ))}
+        </g>
+
+        <g
+          fill="#000"
+          opacity={appearance.shadowOpacity}
+          filter="url(#geometry-guide-shadow)"
+        >
+          {renderedCells.map((cell) => (
+            <rect
+              key={`shadow-${cell.rowIndex}-${cell.columnIndex}`}
+              x={originX + cell.columnIndex * pitchX + shadowX}
+              y={originY + cell.rowIndex * pitchY + shadowY}
+              width={pixelWidth}
+              height={pixelHeight}
+              rx="0.6"
+            />
+          ))}
+        </g>
+
+        <g fill={appearance.pixel}>
+          {renderedCells.map((cell) => (
+            <rect
+              key={`pixel-${cell.rowIndex}-${cell.columnIndex}`}
+              x={originX + cell.columnIndex * pitchX}
+              y={originY + cell.rowIndex * pitchY}
+              width={pixelWidth}
+              height={pixelHeight}
+              rx="0.6"
+            />
+          ))}
+        </g>
+
+        <g className="guide-measurements" aria-hidden="true">
+          <path d={`M ${sampleX} ${sampleY - 7} V ${sampleY - 13} H ${sampleX + pixelWidth} V ${sampleY - 7}`} />
+          <path d={`M ${sampleX + pixelWidth / 2} ${sampleY - 13} V 24 H 233`} />
+
+          <path d={`M ${sampleX - 7} ${sampleY} H ${sampleX - 13} V ${sampleY + pixelHeight} H ${sampleX - 7}`} />
+          <path d={`M ${sampleX - 13} ${sampleY + pixelHeight / 2} H 44 V 101`} />
+
+          <path d={`M ${sampleX + pixelWidth} ${sampleY + pixelHeight / 2} H ${sampleX + pitchX}`} />
+          <path d={`M ${sampleX + pixelWidth + appearance.gapMm * scale / 2} ${sampleY + pixelHeight / 2} H 258 V 107`} />
+        </g>
+      </svg>
+
+      <button type="button" className="guide-callout guide-width" onClick={() => focusSlider('pixel-width')}>
+        <span>Width</span><strong>{formatMillimetres(appearance.pixelWidthMm)}</strong>
+      </button>
+      <button type="button" className="guide-callout guide-height" onClick={() => focusSlider('pixel-height')}>
+        <span>Height</span><strong>{formatMillimetres(appearance.pixelHeightMm)}</strong>
+      </button>
+      <button type="button" className="guide-callout guide-gap" onClick={() => focusSlider('pixel-gap')}>
+        <span>Gap</span><strong>{formatMillimetres(appearance.gapMm)}</strong>
+      </button>
+      <div className="guide-pitch">
+        <span>Pitch</span>
+        <strong>{formatMillimetreDimensions(pitchXMm, pitchYMm)}</strong>
+      </div>
+    </div>
   );
 }
 
@@ -571,10 +704,7 @@ export function LcdStudio() {
         id="controls-panel"
         className="controls-panel"
       >
-          <div className="panel-heading">
-            <h1>Controls</h1>
-          </div>
-
+          <h1 className="sr-only">Retro LCD studio</h1>
           <header className="panel-toolbar" aria-label="View and editing controls">
             <fieldset className="mode-switch" aria-label="Interaction mode">
               <Button
@@ -631,8 +761,18 @@ export function LcdStudio() {
               </Select>
             </section>
 
-            <section className="control-group" aria-labelledby="palette-heading">
-              <h2 id="palette-heading">Palette</h2>
+            <section className="control-group geometry-group" aria-labelledby="geometry-heading">
+              <h2 id="geometry-heading">Pixel geometry</h2>
+              <GeometryGuide appearance={appearance} />
+              <div className="geometry-controls">
+                <ControlSlider id="pixel-width" label="Width" value={appearance.pixelWidthMm} formattedValue={formatMillimetres(appearance.pixelWidthMm)} min={0.25} max={5} step={0.05} onChange={(pixelWidthMm) => setAppearance((current) => ({ ...current, pixelWidthMm }))} />
+                <ControlSlider id="pixel-height" label="Height" value={appearance.pixelHeightMm} formattedValue={formatMillimetres(appearance.pixelHeightMm)} min={0.25} max={5} step={0.05} onChange={(pixelHeightMm) => setAppearance((current) => ({ ...current, pixelHeightMm }))} />
+                <ControlSlider id="pixel-gap" label="Gap" value={appearance.gapMm} formattedValue={formatMillimetres(appearance.gapMm)} min={0} max={1} step={0.01} onChange={(gapMm) => setAppearance((current) => ({ ...current, gapMm }))} />
+              </div>
+            </section>
+
+            <section className="control-group" aria-labelledby="surface-heading">
+              <h2 id="surface-heading">Surface</h2>
               <div className="preset-block">
                 <RadioGroup
                   className="preset-grid"
@@ -692,23 +832,12 @@ export function LcdStudio() {
               </div>
             </section>
 
-            <section className="control-group" aria-labelledby="geometry-heading">
-              <h2 id="geometry-heading">Pixel geometry</h2>
-              <ControlSlider label="Width" value={appearance.pixelWidthMm} formattedValue={formatMillimetres(appearance.pixelWidthMm)} min={0.25} max={5} step={0.05} onChange={(pixelWidthMm) => setAppearance((current) => ({ ...current, pixelWidthMm }))} />
-              <ControlSlider label="Height" value={appearance.pixelHeightMm} formattedValue={formatMillimetres(appearance.pixelHeightMm)} min={0.25} max={5} step={0.05} onChange={(pixelHeightMm) => setAppearance((current) => ({ ...current, pixelHeightMm }))} />
-              <ControlSlider label="Gap" value={appearance.gapMm} formattedValue={formatMillimetres(appearance.gapMm)} min={0} max={1} step={0.01} onChange={(gapMm) => setAppearance((current) => ({ ...current, gapMm }))} />
-              <div className="derived-value">
-                <span>Pitch</span>
-                <output>{formatMillimetreDimensions(appearance.pixelWidthMm + appearance.gapMm, appearance.pixelHeightMm + appearance.gapMm)}</output>
-              </div>
-            </section>
-
             <section className="control-group" aria-labelledby="shadow-heading">
               <h2 id="shadow-heading">Shadow</h2>
-              <ControlSlider label="X offset" value={appearance.shadowOffsetMm[0]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[0])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [value, current.shadowOffsetMm[1]] }))} />
-              <ControlSlider label="Y offset" value={appearance.shadowOffsetMm[1]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[1])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [current.shadowOffsetMm[0], value] }))} />
-              <ControlSlider label="Softness" value={appearance.shadowSoftnessMm} formattedValue={formatMillimetres(appearance.shadowSoftnessMm)} min={0} max={1} step={0.01} onChange={(shadowSoftnessMm) => setAppearance((current) => ({ ...current, shadowSoftnessMm }))} />
-              <ControlSlider label="Opacity" value={appearance.shadowOpacity} formattedValue={`${Math.round(appearance.shadowOpacity * 100)}%`} min={0} max={0.6} step={0.01} onChange={(shadowOpacity) => setAppearance((current) => ({ ...current, shadowOpacity }))} />
+              <ControlSlider id="shadow-x" label="X offset" value={appearance.shadowOffsetMm[0]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[0])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [value, current.shadowOffsetMm[1]] }))} />
+              <ControlSlider id="shadow-y" label="Y offset" value={appearance.shadowOffsetMm[1]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[1])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [current.shadowOffsetMm[0], value] }))} />
+              <ControlSlider id="shadow-softness" label="Softness" value={appearance.shadowSoftnessMm} formattedValue={formatMillimetres(appearance.shadowSoftnessMm)} min={0} max={1} step={0.01} onChange={(shadowSoftnessMm) => setAppearance((current) => ({ ...current, shadowSoftnessMm }))} />
+              <ControlSlider id="shadow-opacity" label="Opacity" value={appearance.shadowOpacity} formattedValue={`${Math.round(appearance.shadowOpacity * 100)}%`} min={0} max={0.6} step={0.01} onChange={(shadowOpacity) => setAppearance((current) => ({ ...current, shadowOpacity }))} />
             </section>
 
             <Button type="button" variant="outline" className="reset-appearance" onClick={() => setAppearance(DEFAULT_APPEARANCE)}>
