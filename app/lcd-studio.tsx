@@ -1124,9 +1124,15 @@ export function LcdStudio() {
         <div className="gesture-hint" aria-live="polite">
           <MousePointer2 aria-hidden="true" />
           {mode === 'view' ? (
-            <span><strong>Drag</strong> to tilt · <strong>Shift-drag</strong> to pan · <strong>Scroll</strong> to zoom</span>
+            <>
+              <span className="mouse-gesture-hint"><strong>Drag</strong> to tilt · <strong>Shift-drag</strong> to pan · <strong>Scroll</strong> to zoom</span>
+              <span className="touch-gesture-hint"><strong>1 finger</strong> tilts · <strong>2 fingers</strong> move &amp; zoom</span>
+            </>
           ) : (
-            <span><strong>Drag</strong> to paint · <strong>Shift-drag</strong> to pan · <strong>Scroll</strong> to zoom</span>
+            <>
+              <span className="mouse-gesture-hint"><strong>Drag</strong> to paint · <strong>Shift-drag</strong> to pan · <strong>Scroll</strong> to zoom</span>
+              <span className="touch-gesture-hint"><strong>1 finger</strong> paints · <strong>2 fingers</strong> move &amp; zoom</span>
+            </>
           )}
         </div>
       </section>

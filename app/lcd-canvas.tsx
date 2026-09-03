@@ -312,6 +312,14 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       paintValue?: 0 | 1;
       lastCell?: string;
     }>(null);
+    const touchPointersRef = useRef(new Map<number, { x: number; y: number }>());
+    const touchGestureRef = useRef<null | {
+      pointerIds: [number, number];
+      initialDistance: number;
+      initialZoom: number;
+      localX: number;
+      localY: number;
+    }>(null);
 
     const scheduleDraw = () => {
       if (frameRef.current !== null) return;
@@ -332,7 +340,12 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       const offset = bitmapOffsetRef.current;
       const centerXMm = (offset[0] + width * 0.5) * pitchXMm;
       const centerYMm = -(offset[1] + height * 0.5) * pitchYMm;
-      const zoom = clamp(Math.min((bounds.width - 96) / (width * pitchXMm), (bounds.height - 180) / (height * pitchYMm)) * 0.82, 8, 180);
+      const horizontalPadding = Math.min(96, bounds.width * 0.2);
+      const verticalPadding = Math.min(180, bounds.height * 0.28);
+      const zoom = clamp(Math.min(
+        (bounds.width - horizontalPadding) / (width * pitchXMm),
+        (bounds.height - verticalPadding) / (height * pitchYMm),
+      ) * 0.82, 8, 180);
       cameraRef.current = {
         yaw: 0,
         pitch: 0,
@@ -604,9 +617,44 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       onPixelChangeRef.current(cell.row, cell.column, drag.paintValue);
     };
 
+    const beginTouchGesture = () => {
+      const canvas = canvasRef.current;
+      const pointers = [...touchPointersRef.current.entries()].slice(0, 2);
+      if (!canvas || pointers.length < 2) return;
+
+      const [[firstId, first], [secondId, second]] = pointers;
+      const centerX = (first.x + second.x) / 2;
+      const centerY = (first.y + second.y) / 2;
+      const bounds = canvas.getBoundingClientRect();
+      const camera = cameraRef.current;
+      const projection = inverseProjection(camera);
+      const screenX = centerX - bounds.left - bounds.width * 0.5;
+      const screenY = bounds.height * 0.5 - (centerY - bounds.top);
+
+      touchGestureRef.current = {
+        pointerIds: [firstId, secondId],
+        initialDistance: Math.max(Math.hypot(second.x - first.x, second.y - first.y), 1),
+        initialZoom: camera.zoom,
+        localX: (projection.inv00 * (screenX - camera.panX) + projection.inv01 * (screenY - camera.panY)) / camera.zoom,
+        localY: (projection.inv10 * (screenX - camera.panX) + projection.inv11 * (screenY - camera.panY)) / camera.zoom,
+      };
+    };
+
     const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
       if (event.button !== 0 && event.button !== 1 && event.button !== 2) return;
       event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+
+      if (event.pointerType === 'touch') {
+        touchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (touchPointersRef.current.size >= 2) {
+          if (dragRef.current?.kind === 'paint') onPaintEndRef.current?.();
+          dragRef.current = null;
+          beginTouchGesture();
+          return;
+        }
+      }
+
       const shouldPan = event.shiftKey || event.button === 1 || event.button === 2;
       let kind: 'rotate' | 'pan' | 'paint' = shouldPan ? 'pan' : 'rotate';
       let paintValue: 0 | 1 | undefined;
@@ -625,14 +673,52 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         y: event.clientY,
         paintValue,
       };
-      event.currentTarget.setPointerCapture(event.pointerId);
       if (kind === 'paint') {
         onPaintStartRef.current?.();
-        paintAtPointer(event.clientX, event.clientY);
+        // Delay touch paint until movement or release so a second finger can
+        // begin navigation without toggling the first pixel accidentally.
+        if (event.pointerType !== 'touch') {
+          paintAtPointer(event.clientX, event.clientY);
+        }
       }
     };
 
     const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+      if (event.pointerType === 'touch' && touchPointersRef.current.has(event.pointerId)) {
+        touchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        const gesture = touchGestureRef.current;
+        if (gesture) {
+          const first = touchPointersRef.current.get(gesture.pointerIds[0]);
+          const second = touchPointersRef.current.get(gesture.pointerIds[1]);
+          const canvas = canvasRef.current;
+          if (!first || !second || !canvas) return;
+
+          const distance = Math.max(Math.hypot(second.x - first.x, second.y - first.y), 1);
+          const centerX = (first.x + second.x) / 2;
+          const centerY = (first.y + second.y) / 2;
+          const bounds = canvas.getBoundingClientRect();
+          const screenX = centerX - bounds.left - bounds.width * 0.5;
+          const screenY = bounds.height * 0.5 - (centerY - bounds.top);
+          const camera = cameraRef.current;
+          const projection = inverseProjection(camera);
+          const nextZoom = clamp(
+            gesture.initialZoom * distance / gesture.initialDistance,
+            8,
+            180,
+          );
+
+          camera.zoom = nextZoom;
+          camera.panX = screenX - nextZoom * (
+            projection.m00 * gesture.localX + projection.m01 * gesture.localY
+          );
+          camera.panY = screenY - nextZoom * (
+            projection.m10 * gesture.localX + projection.m11 * gesture.localY
+          );
+          scheduleDraw();
+          return;
+        }
+      }
+
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
       const deltaX = event.clientX - drag.x;
@@ -654,8 +740,35 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     };
 
     const endPointer = (event: React.PointerEvent<HTMLCanvasElement>) => {
+      if (event.pointerType === 'touch') {
+        touchPointersRef.current.delete(event.pointerId);
+        if (touchGestureRef.current) {
+          touchGestureRef.current = null;
+          const remainingPointer = touchPointersRef.current.entries().next().value as
+            | [number, { x: number; y: number }]
+            | undefined;
+          dragRef.current = remainingPointer
+            ? {
+                pointerId: remainingPointer[0],
+                kind: 'pan',
+                x: remainingPointer[1].x,
+                y: remainingPointer[1].y,
+              }
+            : null;
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+          return;
+        }
+      }
+
       if (dragRef.current?.pointerId !== event.pointerId) return;
-      if (dragRef.current.kind === 'paint') onPaintEndRef.current?.();
+      if (dragRef.current.kind === 'paint') {
+        if (!dragRef.current.lastCell && event.type === 'pointerup') {
+          paintAtPointer(event.clientX, event.clientY);
+        }
+        onPaintEndRef.current?.();
+      }
       dragRef.current = null;
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
