@@ -491,66 +491,66 @@ export function LcdStudio() {
         appearance={appearance}
       />
 
-      <header className="instrument-bar" aria-label="Retro LCD controls">
-        <fieldset className="mode-switch" aria-label="Interaction mode">
-          <Button
-            type="button"
-            size="sm"
-            variant={mode === 'view' ? 'default' : 'ghost'}
-            aria-pressed={mode === 'view'}
-            onClick={() => setMode('view')}
-          >
-            <Rotate3D data-icon="inline-start" />
-            <span className="button-label">View</span>
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={mode === 'edit' ? 'default' : 'ghost'}
-            aria-pressed={mode === 'edit'}
-            onClick={() => setMode('edit')}
-          >
-            <Pencil data-icon="inline-start" />
-            <span className="button-label">Edit</span>
-          </Button>
-        </fieldset>
-
-        <span className="bar-divider" aria-hidden="true" />
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Undo" title="Undo" disabled={past.length === 0} onClick={undo}>
-          <Undo2 />
-        </Button>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Redo" title="Redo" disabled={future.length === 0} onClick={redo}>
-          <Redo2 />
-        </Button>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Reset view" title="Reset view" onClick={() => canvasRef.current?.resetView()}>
-          <RotateCcw />
-        </Button>
-        <Button type="button" size="icon-sm" variant="ghost" aria-label="Export PNG" title="Export PNG" disabled={exporting} onClick={() => void exportPng()}>
-          <Download />
-        </Button>
-      </header>
-
-      <div className="appearance-drawer" data-open={panelOpen}>
+      <div className="control-drawer" data-open={panelOpen}>
         <button
           type="button"
-          className="appearance-tab"
-          aria-label={panelOpen ? 'Close appearance' : 'Open appearance'}
+          className="control-tab"
+          aria-label={panelOpen ? 'Close controls' : 'Open controls'}
           aria-expanded={panelOpen}
-          aria-controls="settings-panel"
+          aria-controls="controls-panel"
           onClick={() => setPanelOpen((open) => !open)}
         >
-          <span>Appearance</span>
+          <span>Controls</span>
         </button>
 
         <aside
-          id="settings-panel"
-          className="settings-panel"
+          id="controls-panel"
+          className="controls-panel"
           aria-hidden={!panelOpen}
           inert={!panelOpen}
         >
           <div className="panel-heading">
-            <h1>Appearance</h1>
+            <h1>Controls</h1>
           </div>
+
+          <header className="panel-toolbar" aria-label="View and editing controls">
+            <fieldset className="mode-switch" aria-label="Interaction mode">
+              <Button
+                type="button"
+                size="sm"
+                variant={mode === 'view' ? 'default' : 'ghost'}
+                aria-pressed={mode === 'view'}
+                onClick={() => setMode('view')}
+              >
+                <Rotate3D data-icon="inline-start" />
+                <span className="button-label">View</span>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={mode === 'edit' ? 'default' : 'ghost'}
+                aria-pressed={mode === 'edit'}
+                onClick={() => setMode('edit')}
+              >
+                <Pencil data-icon="inline-start" />
+                <span className="button-label">Edit</span>
+              </Button>
+            </fieldset>
+
+            <span className="bar-divider" aria-hidden="true" />
+            <Button type="button" size="icon-sm" variant="ghost" aria-label="Undo" title="Undo" disabled={past.length === 0} onClick={undo}>
+              <Undo2 />
+            </Button>
+            <Button type="button" size="icon-sm" variant="ghost" aria-label="Redo" title="Redo" disabled={future.length === 0} onClick={redo}>
+              <Redo2 />
+            </Button>
+            <Button type="button" size="icon-sm" variant="ghost" aria-label="Reset view" title="Reset view" onClick={() => canvasRef.current?.resetView()}>
+              <RotateCcw />
+            </Button>
+            <Button type="button" size="icon-sm" variant="ghost" aria-label="Export PNG" title="Export PNG" disabled={exporting} onClick={() => void exportPng()}>
+              <Download />
+            </Button>
+          </header>
 
           <div className="panel-section appearance-section">
             <section className="control-group" aria-labelledby="palette-heading">
