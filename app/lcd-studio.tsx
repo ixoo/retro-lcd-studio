@@ -1039,6 +1039,14 @@ export function LcdStudio() {
   const [exporting, setExporting] = useState(false);
   const [importingImage, setImportingImage] = useState(false);
   const [actionStatus, setActionStatus] = useState('Ready');
+  const [hiddenGestureHintContext, setHiddenGestureHintContext] = useState<string | null>(null);
+  const gestureHintContext = `${mode}:${editTool}`;
+  const showGestureHint = hiddenGestureHintContext !== gestureHintContext;
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setHiddenGestureHintContext(`${mode}:${editTool}`), 10_000);
+    return () => window.clearTimeout(timeout);
+  }, [editTool, mode]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -1831,7 +1839,7 @@ export function LcdStudio() {
           appearance={appearance}
         />
 
-        <div className="gesture-hint" aria-live="polite">
+        {showGestureHint && <div className="gesture-hint" aria-live="polite">
           <MousePointer2 aria-hidden="true" />
           {mode === 'view' ? (
             <>
@@ -1859,7 +1867,7 @@ export function LcdStudio() {
               <span className="touch-gesture-hint"><strong>Drag</strong> select · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
             </>
           )}
-        </div>
+        </div>}
       </section>
     </main>
   );
