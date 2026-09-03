@@ -20,6 +20,13 @@ import {
 } from '@/app/lcd-canvas';
 import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 
@@ -36,6 +43,57 @@ const MAX_BITMAP_DIMENSION = 4096;
 const INITIAL_BITMAP_OFFSET: [number, number] = [
   -INITIAL_BITMAP[0].length / 2,
   -INITIAL_BITMAP.length / 2,
+];
+
+const DEMO_BITMAPS = [
+  {
+    id: 'lcd',
+    label: 'LCD',
+    rows: INITIAL_BITMAP,
+  },
+  {
+    id: 'smile',
+    label: 'Smile',
+    rows: [
+      '00111111100',
+      '01000000010',
+      '10010001001',
+      '10010001001',
+      '10000000001',
+      '10100000101',
+      '10011111001',
+      '01000000010',
+      '00111111100',
+    ],
+  },
+  {
+    id: 'invader',
+    label: 'Invader',
+    rows: [
+      '00100000100',
+      '00010001000',
+      '00111111100',
+      '01101110110',
+      '11111111111',
+      '10111111101',
+      '10100000101',
+      '00011011000',
+    ],
+  },
+  {
+    id: 'checker',
+    label: 'Checker',
+    rows: [
+      '101010101010',
+      '010101010101',
+      '101010101010',
+      '010101010101',
+      '101010101010',
+      '010101010101',
+      '101010101010',
+      '010101010101',
+    ],
+  },
 ];
 
 const DEFAULT_APPEARANCE: LcdAppearance = {
@@ -456,6 +514,21 @@ export function LcdStudio() {
     return () => lifecycle.abort();
   }, [loadBitmapAction, resetViewAction]);
 
+  const activeBitmapDemo = DEMO_BITMAPS.find((demo) => {
+    const centeredOffset = centeredBitmapOffset(demo.rows);
+    return bitmapsMatch(bitmap, demo.rows)
+      && bitmapOffsetCells[0] === centeredOffset[0]
+      && bitmapOffsetCells[1] === centeredOffset[1];
+  });
+
+  const applyBitmapDemo = (demoId: string | null) => {
+    const demo = DEMO_BITMAPS.find((item) => item.id === demoId);
+    if (!demo) return;
+    replaceBitmap(demo.rows, true, centeredBitmapOffset(demo.rows));
+    canvasRef.current?.resetView();
+    setActionStatus(`Demo loaded: ${demo.label}`);
+  };
+
   const activeColorPreset = LCD_COLOR_PRESETS.find(
     (preset) => preset.background === appearance.background
       && preset.pixel === appearance.pixel,
@@ -539,6 +612,22 @@ export function LcdStudio() {
           </header>
 
           <div className="panel-section appearance-section">
+            <section className="control-group" aria-labelledby="bitmap-heading">
+              <h2 id="bitmap-heading">Bitmap</h2>
+              <Select value={activeBitmapDemo?.id ?? ''} onValueChange={applyBitmapDemo}>
+                <SelectTrigger className="demo-select" aria-label="Demo bitmap">
+                  <SelectValue placeholder="Load demo…" />
+                </SelectTrigger>
+                <SelectContent align="start">
+                  {DEMO_BITMAPS.map((demo) => (
+                    <SelectItem key={demo.id} value={demo.id}>
+                      {demo.label} · {demo.rows[0].length}×{demo.rows.length}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </section>
+
             <section className="control-group" aria-labelledby="palette-heading">
               <h2 id="palette-heading">Palette</h2>
               <div className="preset-block">

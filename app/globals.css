@@ -207,6 +207,12 @@
   text-transform: uppercase;
 }
 
+.demo-select {
+  width: 100%;
+  color: #cbd3c9;
+  background: #202522;
+}
+
 .color-controls {
   display: grid;
   grid-template-columns: 1fr 1fr;
