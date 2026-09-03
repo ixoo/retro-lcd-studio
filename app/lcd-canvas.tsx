@@ -42,7 +42,16 @@ type Camera = {
   fitted: boolean;
 };
 
-type LocalGpuShaderModule = object;
+type LocalGpuShaderModule = {
+  getCompilationInfo: () => Promise<{
+    messages: Array<{
+      type: 'error' | 'warning' | 'info';
+      message: string;
+      lineNum: number;
+      linePos: number;
+    }>;
+  }>;
+};
 type LocalGpuBindGroup = object;
 type LocalGpuBindGroupLayout = object;
 
@@ -88,6 +97,12 @@ type LocalGpuDevice = {
   createTexture: (descriptor: object) => LocalGpuTexture;
   createBindGroup: (descriptor: object) => LocalGpuBindGroup;
   createCommandEncoder: () => LocalGpuCommandEncoder;
+  pushErrorScope: (filter: 'validation') => void;
+  popErrorScope: () => Promise<{ message: string } | null>;
+  addEventListener: (
+    type: 'uncapturederror',
+    listener: (event: { error: { message: string } }) => void,
+  ) => void;
 };
 
 type LocalGpuApi = {
@@ -161,8 +176,8 @@ fn activePixelDistance(local: vec2<f32>) -> f32 {
     return 1000.0;
   }
 
-  let active = textureLoad(bitmapTexture, vec2<i32>(cell), 0).r;
-  if (active == 0u) {
+  let pixelValue = textureLoad(bitmapTexture, vec2<i32>(cell), 0).r;
+  if (pixelValue == 0u) {
     return 1000.0;
   }
 
@@ -335,6 +350,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           const device = await adapter.requestDevice();
           if (cancelled) return;
 
+          device.addEventListener('uncapturederror', (event) => {
+            console.error('WebGPU validation error:', event.error.message);
+          });
+
           const context = canvas!.getContext('webgpu') as unknown as LocalGpuCanvasContext | null;
           if (!context) {
             setRendererState('unsupported');
@@ -350,6 +369,17 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           });
 
           const shaderModule = device.createShaderModule({ code: SHADER });
+          const compilationInfo = await shaderModule.getCompilationInfo();
+          const shaderErrors = compilationInfo.messages.filter(
+            (message) => message.type === 'error',
+          );
+          if (shaderErrors.length > 0) {
+            throw new Error(shaderErrors.map((message) =>
+              `WGSL ${message.lineNum}:${message.linePos} ${message.message}`,
+            ).join('\n'));
+          }
+
+          device.pushErrorScope('validation');
           const pipeline = device.createRenderPipeline({
             layout: 'auto',
             vertex: { module: shaderModule, entryPoint: 'vertexMain' },
@@ -360,6 +390,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
             },
             primitive: { topology: 'triangle-list' },
           });
+          const pipelineError = await device.popErrorScope();
+          if (pipelineError) throw new Error(pipelineError.message);
           const uniformBuffer = device.createBuffer({
             size: 96,
             usage: 0x40 | 0x08,
