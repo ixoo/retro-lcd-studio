@@ -3,16 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Download,
-  Grid2X2,
   MousePointer2,
-  PanelRightClose,
-  PanelRightOpen,
   Pencil,
   Redo2,
   Rotate3D,
   RotateCcw,
   Settings2,
   Undo2,
+  X,
 } from 'lucide-react';
 
 import {
@@ -495,14 +493,6 @@ export function LcdStudio() {
       />
 
       <header className="instrument-bar" aria-label="Retro LCD controls">
-        <div className="brand-lockup">
-          <span className="brand-mark" aria-hidden="true"><Grid2X2 /></span>
-          <span className="brand-copy">
-            <strong>LCD/01</strong>
-            <small>BITMAP SURFACE</small>
-          </span>
-        </div>
-
         <fieldset className="mode-switch" aria-label="Interaction mode">
           <Button
             type="button"
@@ -539,19 +529,20 @@ export function LcdStudio() {
         <Button type="button" size="icon-sm" variant="ghost" aria-label="Export PNG" title="Export PNG" disabled={exporting} onClick={() => void exportPng()}>
           <Download />
         </Button>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant={panelOpen ? 'secondary' : 'ghost'}
-          aria-label={panelOpen ? 'Close settings' : 'Open settings'}
-          aria-expanded={panelOpen}
-          aria-controls="settings-panel"
-          title={panelOpen ? 'Close settings' : 'Open settings'}
-          onClick={() => setPanelOpen((open) => !open)}
-        >
-          {panelOpen ? <PanelRightClose /> : <PanelRightOpen />}
-        </Button>
       </header>
+
+      <button
+        type="button"
+        className="appearance-tab"
+        data-panel-open={panelOpen}
+        aria-expanded={panelOpen}
+        aria-controls="settings-panel"
+        aria-hidden={panelOpen}
+        tabIndex={panelOpen ? -1 : 0}
+        onClick={() => setPanelOpen(true)}
+      >
+        Appearance
+      </button>
 
       <aside className="surface-readout" aria-label="Virtual LCD surface">
         <span>MONO</span>
@@ -569,7 +560,7 @@ export function LcdStudio() {
         <div className="panel-heading">
           <h1>Appearance</h1>
           <Button type="button" size="icon-sm" variant="ghost" aria-label="Close appearance" onClick={() => setPanelOpen(false)}>
-            <PanelRightClose />
+            <X />
           </Button>
         </div>
 
