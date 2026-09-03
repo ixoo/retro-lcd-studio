@@ -278,20 +278,19 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   let selectionOrigin = uniforms.selection.xy;
   let selectionSize = uniforms.selection.zw;
   let selectionEnd = selectionOrigin + selectionSize;
+  let selectionCell = floor(selectionGrid);
   let insideSelection = selectionSize.x > 0.0 && selectionSize.y > 0.0
-    && selectionGrid.x >= selectionOrigin.x && selectionGrid.y >= selectionOrigin.y
-    && selectionGrid.x <= selectionEnd.x && selectionGrid.y <= selectionEnd.y;
-  let selectionEdgeDistance = min(
-    min(selectionGrid.x - selectionOrigin.x, selectionEnd.x - selectionGrid.x),
-    min(selectionGrid.y - selectionOrigin.y, selectionEnd.y - selectionGrid.y)
-  );
-  let selectionAntialias = max(fwidth(selectionGrid.x), fwidth(selectionGrid.y));
-  let selectionBorder = select(
-    0.0,
-    1.0 - smoothstep(0.0, selectionAntialias * 1.8, selectionEdgeDistance),
-    insideSelection
-  );
-  let selectionFill = select(0.0, 0.055, insideSelection);
+    && selectionCell.x >= selectionOrigin.x && selectionCell.y >= selectionOrigin.y
+    && selectionCell.x < selectionEnd.x && selectionCell.y < selectionEnd.y;
+  let selectionCellDistance = cellPixelDistance(selectionGrid);
+  let selectionCoverage = (1.0 - smoothstep(-antialias, antialias, selectionCellDistance))
+    * select(0.0, 1.0, insideSelection);
+  let insideBitmapForSelection = selectionCell.x >= 0.0 && selectionCell.y >= 0.0
+    && selectionCell.x < uniforms.bitmapSize.x && selectionCell.y < uniforms.bitmapSize.y;
+  var selectedPixelValue = 0u;
+  if (insideBitmapForSelection) {
+    selectedPixelValue = textureLoad(bitmapTexture, vec2<i32>(selectionCell), 0).r;
+  }
   let pixelCoverage = 1.0 - smoothstep(-antialias, antialias, pixelDistance);
   let stampCoverage = 1.0 - smoothstep(-antialias, antialias, stampDistance);
   let shadowFeather = max(uniforms.geometryMm.w, antialias);
@@ -314,8 +313,11 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
     stampTarget = uniforms.background.rgb;
   }
   color = mix(color, stampTarget, stampCoverage * 0.42);
-  let selectionColor = vec3<f32>(0.84, 1.0, 0.27);
-  color = mix(color, selectionColor, selectionFill + selectionBorder * 0.72);
+  var selectionColor = vec3<f32>(0.84, 1.0, 0.27);
+  if (selectedPixelValue == 1u) {
+    selectionColor = vec3<f32>(0.37, 0.47, 0.10);
+  }
+  color = mix(color, selectionColor, selectionCoverage * 0.82);
   return vec4<f32>(color, 1.0);
 }
 `;
