@@ -225,13 +225,12 @@
 .guide-dimension-measurement,
 .guide-gap-measurement {
   fill: none;
-  stroke: rgb(16 20 17 / 82%);
+  stroke: #090c0a;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.4;
+  stroke-width: 1.6;
 }
 
-.guide-dimension-highlight,
 .guide-gap-highlight {
   fill: #d7ff45;
   opacity: 0.56;

@@ -386,24 +386,6 @@ function GeometryGuide({ appearance }: { appearance: LcdAppearance }) {
           rx="0.4"
           aria-hidden="true"
         />
-        <rect
-          className="guide-dimension-highlight"
-          x={sampleX}
-          y={sampleY - 2.5}
-          width={pixelWidth}
-          height="5"
-          rx="1"
-          aria-hidden="true"
-        />
-        <rect
-          className="guide-dimension-highlight"
-          x={sampleX - 2.5}
-          y={sampleY}
-          width="5"
-          height={pixelHeight}
-          rx="1"
-          aria-hidden="true"
-        />
 
         <g className="guide-dimension-measurement" aria-hidden="true">
           <path d={`M ${sampleX} ${sampleY - 7} V ${sampleY - 13} H ${sampleX + pixelWidth} V ${sampleY - 7}`} />
