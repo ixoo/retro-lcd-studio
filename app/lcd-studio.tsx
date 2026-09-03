@@ -41,7 +41,6 @@ const INITIAL_BITMAP = [
   '11111001110011110',
 ];
 const MAX_BITMAP_DIMENSION = 4096;
-const MAX_IMPORTED_IMAGE_DIMENSION = 1024;
 const INITIAL_BITMAP_OFFSET: [number, number] = [
   -INITIAL_BITMAP[0].length / 2,
   -INITIAL_BITMAP.length / 2,
@@ -266,12 +265,17 @@ async function imageFileToBitmap(file: File) {
       throw new Error('The image has no visible dimensions.');
     }
 
-    const scale = Math.min(
-      1,
-      MAX_IMPORTED_IMAGE_DIMENSION / Math.max(image.naturalWidth, image.naturalHeight),
-    );
-    const width = Math.max(1, Math.round(image.naturalWidth * scale));
-    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    if (
+      image.naturalWidth > MAX_BITMAP_DIMENSION
+      || image.naturalHeight > MAX_BITMAP_DIMENSION
+    ) {
+      throw new Error(
+        `Images are limited to ${MAX_BITMAP_DIMENSION} × ${MAX_BITMAP_DIMENSION} pixels.`,
+      );
+    }
+
+    const width = image.naturalWidth;
+    const height = image.naturalHeight;
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -309,7 +313,7 @@ async function imageFileToBitmap(file: File) {
       return row;
     });
 
-    return { rows, resized: scale < 1 };
+    return rows;
   } finally {
     URL.revokeObjectURL(imageUrl);
   }
@@ -1050,13 +1054,11 @@ export function LcdStudio() {
     setImportingImage(true);
     setActionStatus(`Converting ${file.name}…`);
     try {
-      const { rows, resized } = await imageFileToBitmap(file);
+      const rows = await imageFileToBitmap(file);
       replaceBitmap(rows, true, centeredBitmapOffset(rows));
       canvasRef.current?.resetView();
       setBitmapPickerOpen(false);
-      setActionStatus(
-        `${file.name} imported · ${rows[0].length} × ${rows.length}${resized ? ' · resized' : ''}`,
-      );
+      setActionStatus(`${file.name} imported · ${rows[0].length} × ${rows.length} · 1:1`);
     } catch (error) {
       console.error('Unable to import the image.', error);
       setActionStatus(error instanceof Error ? error.message : 'Image import failed');
