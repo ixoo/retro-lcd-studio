@@ -9,11 +9,13 @@ import {
 } from 'react';
 
 export type LcdMode = 'view' | 'edit';
+export type LcdTexture = 'flat' | 'fine' | 'fibres' | 'mottled';
 
 export type LcdAppearance = {
   background: string;
   pixel: string;
   inverted: boolean;
+  texture: LcdTexture;
   /** Active pixel dimensions in millimetres. */
   pixelWidthMm: number;
   pixelHeightMm: number;
@@ -140,6 +142,13 @@ type GpuRuntime = {
 
 const MAX_TILT_RADIANS = 1.38;
 
+const TEXTURE_INDEX: Record<LcdTexture, number> = {
+  flat: 0,
+  fine: 1,
+  fibres: 2,
+  mottled: 3,
+};
+
 const SHADER = /* wgsl */ `
 struct Uniforms {
   viewport: vec2<f32>,
@@ -154,6 +163,7 @@ struct Uniforms {
   bitmapOffsetCells: vec2<f32>,
   background: vec4<f32>,
   pixelColor: vec4<f32>,
+  surfaceTexture: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -204,6 +214,46 @@ fn activePixelDistance(local: vec2<f32>) -> f32 {
   return max(edgeDistanceMm.x, edgeDistanceMm.y);
 }
 
+fn hash21(point: vec2<f32>) -> f32 {
+  return fract(sin(dot(point, vec2<f32>(127.1, 311.7))) * 43758.5453);
+}
+
+fn valueNoise(point: vec2<f32>) -> f32 {
+  let cell = floor(point);
+  let withinCell = fract(point);
+  let blend = withinCell * withinCell * (vec2<f32>(3.0) - 2.0 * withinCell);
+  let lower = mix(hash21(cell), hash21(cell + vec2<f32>(1.0, 0.0)), blend.x);
+  let upper = mix(
+    hash21(cell + vec2<f32>(0.0, 1.0)),
+    hash21(cell + vec2<f32>(1.0, 1.0)),
+    blend.x
+  );
+  return mix(lower, upper, blend.y);
+}
+
+fn texturedBackground(local: vec2<f32>, footprintMm: f32) -> vec3<f32> {
+  let textureKind = i32(uniforms.surfaceTexture.x + 0.5);
+  var variation = 0.0;
+
+  if (textureKind == 1) {
+    let featureMm = 0.18;
+    let visibility = 1.0 - smoothstep(featureMm * 0.5, featureMm * 2.0, footprintMm);
+    variation = (valueNoise(local / featureMm) - 0.5) * 0.055 * visibility;
+  } else if (textureKind == 2) {
+    let featureMm = 0.14;
+    let visibility = 1.0 - smoothstep(featureMm * 0.6, featureMm * 2.4, footprintMm);
+    let fibres = valueNoise(local / vec2<f32>(1.8, featureMm));
+    let crossGrain = valueNoise(local / vec2<f32>(0.42, 0.7));
+    variation = ((fibres - 0.5) * 0.052 + (crossGrain - 0.5) * 0.018) * visibility;
+  } else if (textureKind == 3) {
+    let broad = valueNoise(local / 1.6);
+    let detail = valueNoise(local / 0.52);
+    variation = (broad - 0.5) * 0.045 + (detail - 0.5) * 0.018;
+  }
+
+  return clamp(uniforms.background.rgb * (1.0 + variation), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 @fragment
 fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   let centeredScreen = vec2<f32>(
@@ -224,7 +274,8 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   let shadowCoverage = (1.0 - smoothstep(-shadowFeather, shadowFeather, shadowDistance))
     * uniforms.shadowOpacity;
 
-  var color = mix(uniforms.background.rgb, vec3<f32>(0.0), shadowCoverage);
+  let surfaceColor = texturedBackground(local, footprint);
+  var color = mix(surfaceColor, vec3<f32>(0.0), shadowCoverage);
   color = mix(color, uniforms.pixelColor.rgb, pixelCoverage * uniforms.pixelColor.a);
   return vec4<f32>(color, 1.0);
 }
@@ -419,7 +470,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           const pipelineError = await device.popErrorScope();
           if (pipelineError) throw new Error(pipelineError.message);
           const uniformBuffer = device.createBuffer({
-            size: 112,
+            size: 128,
             usage: 0x40 | 0x08,
           });
 
@@ -502,6 +553,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
                 appearanceRef.current.shadowOffsetMm[0], appearanceRef.current.shadowOffsetMm[1], bitmapOffsetRef.current[0], bitmapOffsetRef.current[1],
                 ...background,
                 ...pixel,
+                TEXTURE_INDEX[appearanceRef.current.texture], 0, 0, 0,
               ]);
               device.queue.writeBuffer(uniformBuffer, 0, values);
 

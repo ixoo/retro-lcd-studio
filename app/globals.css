@@ -212,6 +212,19 @@
   background: #202522;
 }
 
+.select-control {
+  display: grid;
+  gap: 0.45rem;
+  color: #bdc5bc;
+  font-size: 0.875rem;
+}
+
+.texture-select {
+  width: 100%;
+  color: #cbd3c9;
+  background: #202522;
+}
+
 .color-controls {
   display: grid;
   grid-template-columns: 1fr 1fr;
