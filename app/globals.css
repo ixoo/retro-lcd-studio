@@ -257,18 +257,6 @@
   letter-spacing: 0.12em;
 }
 
-.settings-tabs {
-  min-height: 0;
-  flex: 1;
-  gap: 0;
-}
-
-.panel-tabs {
-  width: calc(100% - 2rem);
-  margin: 0.9rem 1rem 0;
-  background: #222824;
-}
-
 .panel-section {
   min-height: 0;
   overflow-y: auto;
@@ -298,70 +286,9 @@
   line-height: 1.4;
 }
 
-.section-heading > code {
-  flex: none;
-  padding: 0.3rem 0.42rem;
-  border: 1px solid #384039;
-  border-radius: 0.35rem;
-  color: #cbd3c9;
-  background: #222824;
-  font: 600 0.65rem/1 var(--font-geist-mono), monospace;
-}
-
-.bitmap-input {
-  min-height: 10.5rem;
-  resize: vertical;
-  border-color: #414a42;
-  border-radius: 0.55rem;
-  color: #d7ff45;
-  background: #0f1210;
-  font: 500 0.78rem/1.48 var(--font-geist-mono), monospace;
-  letter-spacing: 0.11em;
-  caret-color: #d7ff45;
-}
-
-.bitmap-input:focus-visible {
-  border-color: #879b38;
-}
-
-.validation-line {
-  display: flex;
-  min-height: 2.2rem;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-  color: #9da69d;
-  font-size: 0.7rem;
-}
-
-.validation-line[data-error='true'] {
-  color: #ff8a77;
-}
-
-.validation-line i {
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 50%;
-  background: #d7ff45;
-}
-
-.apply-button {
-  width: 100%;
-}
-
-.panel-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
-  margin-top: 0.55rem;
-}
-
-.panel-actions button {
-  width: 100%;
-}
-
 .appearance-section {
   display: block;
+  flex: 1;
 }
 
 .color-controls {
@@ -369,6 +296,34 @@
   grid-template-columns: 1fr 1fr;
   gap: 0.5rem;
   margin-bottom: 1.25rem;
+}
+
+.toggle-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid #343c36;
+  border-radius: 0.48rem;
+  background: rgb(32 37 34 / 65%);
+}
+
+.toggle-control label {
+  color: #cbd3c9;
+  font-size: 0.75rem;
+}
+
+.toggle-control p {
+  margin-top: 0.2rem;
+  color: #8f998f;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.toggle-control [data-slot='switch'] {
+  flex: none;
 }
 
 .preset-block {

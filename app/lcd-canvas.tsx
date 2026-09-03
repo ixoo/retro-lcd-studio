@@ -13,6 +13,7 @@ export type LcdMode = 'view' | 'edit';
 export type LcdAppearance = {
   background: string;
   pixel: string;
+  inverted: boolean;
   /** Active pixel dimensions in millimetres. */
   pixelWidthMm: number;
   pixelHeightMm: number;
@@ -183,13 +184,17 @@ fn activePixelDistance(local: vec2<f32>) -> f32 {
     -local.y / pitchMm.y - uniforms.bitmapOffsetCells.y
   );
   let cell = floor(grid);
+  let insideBitmap = cell.x >= 0.0 && cell.y >= 0.0
+    && cell.x < dimensions.x && cell.y < dimensions.y;
+  var pixelValue = 0u;
 
-  if (cell.x < 0.0 || cell.y < 0.0 || cell.x >= dimensions.x || cell.y >= dimensions.y) {
-    return 1000.0;
+  if (insideBitmap) {
+    pixelValue = textureLoad(bitmapTexture, vec2<i32>(cell), 0).r;
   }
 
-  let pixelValue = textureLoad(bitmapTexture, vec2<i32>(cell), 0).r;
-  if (pixelValue == 0u) {
+  let isInverted = uniforms.background.a > 0.5;
+  let isRenderedOn = select(pixelValue == 1u, pixelValue == 0u, isInverted);
+  if (!isRenderedOn) {
     return 1000.0;
   }
 
@@ -488,6 +493,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
               const pixelRatio = canvas!.width / Math.max(canvas!.getBoundingClientRect().width, 1);
               const background = hexToRgba(appearanceRef.current.background);
               const pixel = hexToRgba(appearanceRef.current.pixel);
+              background[3] = appearanceRef.current.inverted ? 1 : 0;
               const values = new Float32Array([
                 canvas!.width, canvas!.height, bitmapWidth, bitmapHeight,
                 projection.inv00, projection.inv01, projection.inv10, projection.inv11,

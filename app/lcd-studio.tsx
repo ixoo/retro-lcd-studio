@@ -9,11 +9,9 @@ import {
   PanelRightOpen,
   Pencil,
   Redo2,
-  RefreshCw,
   Rotate3D,
   RotateCcw,
   Settings2,
-  Trash2,
   Undo2,
 } from 'lucide-react';
 
@@ -26,8 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Slider } from '@/components/ui/slider';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 
 const INITIAL_BITMAP = [
   '10000001110011110',
@@ -47,6 +44,7 @@ const INITIAL_BITMAP_OFFSET: [number, number] = [
 const DEFAULT_APPEARANCE: LcdAppearance = {
   background: '#aeb5a7',
   pixel: '#111512',
+  inverted: false,
   pixelWidthMm: 1,
   pixelHeightMm: 1,
   gapMm: 0.18,
@@ -244,8 +242,6 @@ export function LcdStudio() {
   const [mode, setMode] = useState<LcdMode>('view');
   const [bitmap, setBitmap] = useState(INITIAL_BITMAP);
   const [bitmapOffsetCells, setBitmapOffsetCells] = useState<[number, number]>(INITIAL_BITMAP_OFFSET);
-  const [bitmapText, setBitmapText] = useState(INITIAL_BITMAP.join('\n'));
-  const [bitmapError, setBitmapError] = useState<string | null>(null);
   const [appearance, setAppearance] = useState(DEFAULT_APPEARANCE);
   const [past, setPast] = useState<BitmapFrame[]>([]);
   const [future, setFuture] = useState<BitmapFrame[]>([]);
@@ -259,8 +255,6 @@ export function LcdStudio() {
     if (bitmapsMatch(current, next)
       && currentOffsetCells[0] === nextOffsetCells[0]
       && currentOffsetCells[1] === nextOffsetCells[1]) {
-      setBitmapText(next.join('\n'));
-      setBitmapError(null);
       return false;
     }
     if (recordHistory) {
@@ -271,8 +265,6 @@ export function LcdStudio() {
     bitmapOffsetRef.current = nextOffsetCells;
     setBitmap(next);
     setBitmapOffsetCells(nextOffsetCells);
-    setBitmapText(next.join('\n'));
-    setBitmapError(null);
     return true;
   }, []);
 
@@ -346,30 +338,6 @@ export function LcdStudio() {
     replaceBitmap(next.rows, false, next.offsetCells);
     setActionStatus('Redid edit');
   }, [future, replaceBitmap]);
-
-  const applyBitmapText = () => {
-    const parsed = parseBitmap(bitmapText);
-    if (!parsed.rows) {
-      setBitmapError(parsed.error);
-      setActionStatus('Bitmap needs attention');
-      return;
-    }
-    const changed = replaceBitmap(parsed.rows, true, centeredBitmapOffset(parsed.rows));
-    canvasRef.current?.resetView();
-    setActionStatus(changed ? 'Bitmap applied' : 'Bitmap already current');
-  };
-
-  const clearBitmap = () => {
-    replaceBitmap(bitmapRef.current.map((row) => '0'.repeat(row.length)));
-    setActionStatus('Bitmap cleared');
-  };
-
-  const invertBitmap = () => {
-    replaceBitmap(bitmapRef.current.map((row) =>
-      row.replaceAll('0', 'x').replaceAll('1', '0').replaceAll('x', '1'),
-    ));
-    setActionStatus('Bitmap inverted');
-  };
 
   const exportPng = async () => {
     setExporting(true);
@@ -492,10 +460,6 @@ export function LcdStudio() {
     return () => lifecycle.abort();
   }, [loadBitmapAction, resetViewAction]);
 
-  const parsedDraft = parseBitmap(bitmapText);
-  const draftDimensions = parsedDraft.rows
-    ? `${parsedDraft.rows[0].length} × ${parsedDraft.rows.length}`
-    : '—';
   const activeColorPreset = LCD_COLOR_PRESETS.find(
     (preset) => preset.background === appearance.background
       && preset.pixel === appearance.pixel,
@@ -510,6 +474,11 @@ export function LcdStudio() {
       pixel: preset.pixel,
     }));
     setActionStatus(`Color preset: ${preset.label}`);
+  };
+
+  const setInvertedRendering = (inverted: boolean) => {
+    setAppearance((current) => ({ ...current, inverted }));
+    setActionStatus(inverted ? 'Pixel states inverted' : 'Pixel states normal');
   };
 
   return (
@@ -607,56 +576,10 @@ export function LcdStudio() {
           </Button>
         </div>
 
-        <Tabs defaultValue="bitmap" className="settings-tabs">
-          <TabsList className="panel-tabs" aria-label="Settings sections">
-            <TabsTrigger value="bitmap">Bitmap</TabsTrigger>
-            <TabsTrigger value="appearance">Appearance</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="bitmap" className="panel-section">
+          <section className="panel-section appearance-section">
             <div className="section-heading">
               <div>
-                <h2>Pixel data</h2>
-                <p>Equal-width rows using only 0 and 1.</p>
-              </div>
-              <code>{draftDimensions}</code>
-            </div>
-
-            <Textarea
-              className="bitmap-input"
-              value={bitmapText}
-              spellCheck={false}
-              aria-label="Bitmap data"
-              aria-invalid={Boolean(bitmapError)}
-              onChange={(event) => {
-                const value = event.target.value;
-                setBitmapText(value);
-                const parsed = parseBitmap(value);
-                setBitmapError(parsed.error);
-              }}
-            />
-            <div className="validation-line" data-error={Boolean(bitmapError)}>
-              <span>{bitmapError ?? 'Valid monochrome bitmap'}</span>
-              {!bitmapError && <i aria-hidden="true" />}
-            </div>
-
-            <Button type="button" className="apply-button" disabled={Boolean(bitmapError)} onClick={applyBitmapText}>
-              Apply bitmap
-            </Button>
-            <div className="panel-actions">
-              <Button type="button" variant="outline" onClick={invertBitmap}>
-                <RefreshCw data-icon="inline-start" /> Invert
-              </Button>
-              <Button type="button" variant="outline" onClick={clearBitmap}>
-                <Trash2 data-icon="inline-start" /> Clear
-              </Button>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="appearance" className="panel-section appearance-section">
-            <div className="section-heading">
-              <div>
-                <h2>LCD character</h2>
+                <h2>Appearance</h2>
                 <p>Flat color, spacing, and pixel shadow.</p>
               </div>
             </div>
@@ -699,6 +622,19 @@ export function LcdStudio() {
               <ColorControl label="Surface" value={appearance.background} onChange={(background) => setAppearance((current) => ({ ...current, background }))} />
             </div>
 
+            <div className="toggle-control">
+              <div>
+                <label htmlFor="inverted-rendering">Inverted</label>
+                <p>Render 0 pixels on and 1 pixels off without changing bitmap data.</p>
+              </div>
+              <Switch
+                id="inverted-rendering"
+                checked={appearance.inverted}
+                aria-label="Invert LCD rendering"
+                onCheckedChange={setInvertedRendering}
+              />
+            </div>
+
             <div className="unit-reference">
               <span><strong>Content</strong> uses integer pixel coordinates.</span>
               <span><strong>Geometry</strong> uses millimetres.</span>
@@ -719,8 +655,7 @@ export function LcdStudio() {
             <Button type="button" variant="outline" className="reset-appearance" onClick={() => setAppearance(DEFAULT_APPEARANCE)}>
               <Settings2 data-icon="inline-start" /> Reset appearance
             </Button>
-          </TabsContent>
-        </Tabs>
+          </section>
 
         <footer className="panel-footer">
           <span>STATUS</span>
