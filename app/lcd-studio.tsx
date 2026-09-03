@@ -180,7 +180,8 @@ const PIXEL_FONTS: Array<{ id: PixelFontId; label: string; css: string; weight: 
   { id: 'dot', label: 'Dot', css: 'DotGothic16, sans-serif', weight: 400 },
   { id: 'jacquard', label: 'Jacquard', css: '"Jacquard 12", serif', weight: 400 },
 ];
-const TEXT_PIXEL_SIZES = [6, 8, 10, 12, 16, 20, 24] as const;
+const MIN_TEXT_PIXEL_SIZE = 4;
+const MAX_TEXT_PIXEL_SIZE = 256;
 
 const DEFAULT_APPEARANCE: LcdAppearance = {
   background: '#aeb5a7',
@@ -1022,7 +1023,7 @@ export function LcdStudio() {
   const [editTool, setEditTool] = useState<EditTool>('pen');
   const [selectedSpriteId, setSelectedSpriteId] = useState(CLIPBOARD_SPRITE_ID);
   const [selectedFontId, setSelectedFontId] = useState<PixelFontId>('terminal');
-  const [textPixelSize, setTextPixelSize] = useState<(typeof TEXT_PIXEL_SIZES)[number]>(12);
+  const [textPixelSize, setTextPixelSize] = useState(12);
   const [textValue, setTextValue] = useState('');
   const [textPreviewBitmap, setTextPreviewBitmap] = useState(['0']);
   const [textAnchor, setTextAnchor] = useState<{ row: number; column: number } | null>(null);
@@ -1265,10 +1266,11 @@ export function LcdStudio() {
     });
   };
 
-  const chooseTextSize = (pixelSize: (typeof TEXT_PIXEL_SIZES)[number]) => {
-    setTextPixelSize(pixelSize);
-    updateTextPreviewBitmap(textValue, selectedFontId, pixelSize);
-    if (textSessionRef.current) requestAnimationFrame(() => textInputRef.current?.focus());
+  const chooseTextSize = (pixelSize: number) => {
+    if (!Number.isFinite(pixelSize)) return;
+    const nextSize = Math.min(MAX_TEXT_PIXEL_SIZE, Math.max(MIN_TEXT_PIXEL_SIZE, Math.round(pixelSize)));
+    setTextPixelSize(nextSize);
+    updateTextPreviewBitmap(textValue, selectedFontId, nextSize);
   };
 
   const beginPaint = () => {
@@ -1613,20 +1615,37 @@ export function LcdStudio() {
                         </button>
                       ))}
                     </fieldset>
-                    <fieldset className="text-size-picker" aria-label="Text size">
-                      {TEXT_PIXEL_SIZES.map((size) => (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={textPixelSize === size ? 'default' : 'ghost'}
-                          aria-pressed={textPixelSize === size}
-                          key={size}
-                          onClick={() => chooseTextSize(size)}
-                        >
-                          {size} px
-                        </Button>
-                      ))}
-                    </fieldset>
+                    <div className="control-slider text-size-control">
+                      <span>
+                        <label htmlFor="text-size-input">Size</label>
+                        <span className="text-size-value">
+                          <input
+                            id="text-size-input"
+                            type="number"
+                            min={MIN_TEXT_PIXEL_SIZE}
+                            max={MAX_TEXT_PIXEL_SIZE}
+                            step={1}
+                            value={textPixelSize}
+                            aria-label="Text size in pixels"
+                            onChange={(event) => chooseTextSize(event.target.valueAsNumber)}
+                            onBlur={() => textSessionRef.current && textInputRef.current?.focus()}
+                          />
+                          px
+                        </span>
+                      </span>
+                      <Slider
+                        id="text-size-slider"
+                        aria-label="Text size"
+                        value={[textPixelSize]}
+                        min={MIN_TEXT_PIXEL_SIZE}
+                        max={MAX_TEXT_PIXEL_SIZE}
+                        step={1}
+                        onValueChange={(value) => chooseTextSize(firstSliderValue(value))}
+                        onValueCommitted={() => {
+                          if (textSessionRef.current) textInputRef.current?.focus({ preventScroll: true });
+                        }}
+                      />
+                    </div>
                     <textarea
                       ref={textInputRef}
                       className="pixel-text-capture"

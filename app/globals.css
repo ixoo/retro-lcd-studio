@@ -424,8 +424,7 @@
   gap: 0.55rem;
 }
 
-.font-picker,
-.text-size-picker {
+.font-picker {
   display: grid;
   margin: 0;
   padding: 0;
@@ -470,12 +469,27 @@
   border-radius: 0.3rem;
 }
 
-.text-size-picker {
-  grid-template-columns: repeat(4, 1fr);
+.text-size-control {
+  padding: 0.45rem 0.15rem 0.2rem;
+}
+
+.text-size-value {
+  display: flex;
+  align-items: baseline;
   gap: 0.25rem;
-  padding: 0.15rem;
-  border-radius: 0.55rem;
-  background: #222824;
+  color: #8f998f;
+  font: 550 0.72rem/1 var(--font-geist-mono), monospace;
+}
+
+.text-size-value input {
+  width: 3.5rem;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid #414a42;
+  border-radius: 0.35rem;
+  color: #dce2da;
+  background: #202522;
+  font: inherit;
+  text-align: right;
 }
 
 .pixel-text-capture {
@@ -831,7 +845,7 @@
   .guide-callout,
   .sprite-choice,
   .font-choice,
-  .text-size-picker button,
+  .text-size-value input,
   .preset-option,
   .toggle-control {
     min-height: 2.75rem;
