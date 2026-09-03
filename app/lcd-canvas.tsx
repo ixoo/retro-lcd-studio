@@ -986,7 +986,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const clearPointerPreviews = () => {
       const hadPreview = stampPreviewCellRef.current || textCursorCellRef.current;
       stampPreviewCellRef.current = null;
-      if (editToolRef.current !== 'text') textCursorCellRef.current = null;
+      textCursorCellRef.current = null;
       if (hadPreview) scheduleDraw();
     };
 
