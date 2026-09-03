@@ -1814,6 +1814,17 @@ export function LcdStudio() {
                 aria-label="Choose an image to convert to a bitmap"
                 onChange={(event) => void importImage(event)}
               />
+              {mode === 'edit' && (
+                <>
+                  <span className="bar-divider" aria-hidden="true" />
+                  <Button type="button" size="icon-sm" variant="ghost" aria-label="Undo" title="Undo" disabled={past.length === 0} onClick={undo}>
+                    <Undo2 />
+                  </Button>
+                  <Button type="button" size="icon-sm" variant="ghost" aria-label="Redo" title="Redo" disabled={future.length === 0} onClick={redo}>
+                    <Redo2 />
+                  </Button>
+                </>
+              )}
               <Button type="button" size="icon-sm" variant="ghost" aria-label="Reset view" title="Reset view" onClick={() => canvasRef.current?.resetView()}>
                 <RotateCcw />
               </Button>
@@ -1824,75 +1835,38 @@ export function LcdStudio() {
 
             {mode === 'edit' && (
               <div className="edit-tools" aria-label="Edit tools">
-                <div className="edit-tool-row">
-                  <fieldset className="edit-tool-switch" aria-label="Drawing tool">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={editTool === 'pen' ? 'default' : 'ghost'}
-                      aria-pressed={editTool === 'pen'}
-                      onClick={() => chooseEditTool('pen')}
-                    >
-                      <Pencil data-icon="inline-start" /> Pen
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={editTool === 'text' ? 'default' : 'ghost'}
-                      aria-pressed={editTool === 'text'}
-                      onClick={() => chooseEditTool('text')}
-                    >
-                      <Type data-icon="inline-start" /> Text
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={editTool === 'stamp' ? 'default' : 'ghost'}
-                      aria-pressed={editTool === 'stamp'}
-                      onClick={() => chooseEditTool('stamp')}
-                    >
-                      <Stamp data-icon="inline-start" /> Stamp
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={editTool === 'select' ? 'default' : 'ghost'}
-                      aria-pressed={editTool === 'select'}
-                      onClick={() => chooseEditTool('select')}
-                    >
-                      <BoxSelect data-icon="inline-start" /> Select
-                    </Button>
-                  </fieldset>
-                  <fieldset className="edit-history" aria-label="Edit history">
-                    <Button type="button" size="icon-sm" variant="ghost" aria-label="Undo" title="Undo" disabled={past.length === 0} onClick={undo}>
-                      <Undo2 />
-                    </Button>
-                    <Button type="button" size="icon-sm" variant="ghost" aria-label="Redo" title="Redo" disabled={future.length === 0} onClick={redo}>
-                      <Redo2 />
-                    </Button>
-                  </fieldset>
-                </div>
-
-                <fieldset className="geometry-tool-switch" aria-label="Geometry tools">
-                  <Button type="button" size="sm" variant={editTool === 'line' ? 'default' : 'ghost'} aria-pressed={editTool === 'line'} onClick={() => chooseEditTool('line')} title="Line">
+                <fieldset className="edit-tool-palette" aria-label="Edit tool">
+                  <Button type="button" size="sm" variant={editTool === 'pen' ? 'default' : 'ghost'} aria-pressed={editTool === 'pen'} onClick={() => chooseEditTool('pen')}>
+                    <Pencil /> <span>Pen</span>
+                  </Button>
+                  <Button type="button" size="sm" variant={editTool === 'line' ? 'default' : 'ghost'} aria-pressed={editTool === 'line'} onClick={() => chooseEditTool('line')}>
                     <Minus /> <span>Line</span>
                   </Button>
-                  <Button type="button" size="sm" variant={editTool === 'rectangle' ? 'default' : 'ghost'} aria-label="Rectangle" aria-pressed={editTool === 'rectangle'} onClick={() => chooseEditTool('rectangle')} title="Rectangle">
-                    <Square /> <span>Rect</span>
+                  <Button type="button" size="sm" variant={editTool === 'rectangle' ? 'default' : 'ghost'} aria-pressed={editTool === 'rectangle'} onClick={() => chooseEditTool('rectangle')}>
+                    <Square /> <span>Rectangle</span>
                   </Button>
-                  <Button type="button" size="sm" variant={editTool === 'ellipse' ? 'default' : 'ghost'} aria-label="Ellipse" aria-pressed={editTool === 'ellipse'} onClick={() => chooseEditTool('ellipse')} title="Ellipse">
+                  <Button type="button" size="sm" variant={editTool === 'ellipse' ? 'default' : 'ghost'} aria-pressed={editTool === 'ellipse'} onClick={() => chooseEditTool('ellipse')}>
                     <Circle /> <span>Ellipse</span>
                   </Button>
-                  <Button type="button" size="sm" variant={editTool === 'polygon' ? 'default' : 'ghost'} aria-label="Polygon" aria-pressed={editTool === 'polygon'} onClick={() => chooseEditTool('polygon')} title="Polygon">
-                    <Pentagon /> <span>Poly</span>
+                  <Button type="button" size="sm" variant={editTool === 'polygon' ? 'default' : 'ghost'} aria-pressed={editTool === 'polygon'} onClick={() => chooseEditTool('polygon')}>
+                    <Pentagon /> <span>Polygon</span>
                   </Button>
-                  <Button type="button" size="sm" variant={editTool === 'fill' ? 'default' : 'ghost'} aria-label="Pattern fill" aria-pressed={editTool === 'fill'} onClick={() => chooseEditTool('fill')} title="Pattern fill">
+                  <Button type="button" size="sm" variant={editTool === 'fill' ? 'default' : 'ghost'} aria-label="Pattern fill" aria-pressed={editTool === 'fill'} onClick={() => chooseEditTool('fill')}>
                     <PaintBucket /> <span>Fill</span>
+                  </Button>
+                  <Button type="button" size="sm" variant={editTool === 'text' ? 'default' : 'ghost'} aria-pressed={editTool === 'text'} onClick={() => chooseEditTool('text')}>
+                    <Type /> <span>Text</span>
+                  </Button>
+                  <Button type="button" size="sm" variant={editTool === 'stamp' ? 'default' : 'ghost'} aria-pressed={editTool === 'stamp'} onClick={() => chooseEditTool('stamp')}>
+                    <Stamp /> <span>Stamp</span>
+                  </Button>
+                  <Button type="button" size="sm" variant={editTool === 'select' ? 'default' : 'ghost'} aria-pressed={editTool === 'select'} onClick={() => chooseEditTool('select')}>
+                    <BoxSelect /> <span>Select</span>
                   </Button>
                 </fieldset>
 
                 {editTool === 'text' && (
-                  <div className="text-tool-panel">
+                  <div className="text-tool-panel tool-options">
                     <fieldset className="font-picker" aria-label="Pixel font">
                       {PIXEL_FONTS.map((font) => (
                         <button
@@ -1960,7 +1934,7 @@ export function LcdStudio() {
                 )}
 
                 {editTool === 'stamp' && (
-                  <div className="sprite-library" aria-label="Sprite library">
+                  <div className="sprite-library tool-options" aria-label="Sprite library">
                     <div className="sprite-grid">
                       <button
                         type="button"
@@ -2000,7 +1974,7 @@ export function LcdStudio() {
                 )}
 
                 {editTool === 'fill' && (
-                  <fieldset className="fill-pattern-picker" aria-label="Fill pattern">
+                  <fieldset className="fill-pattern-picker tool-options" aria-label="Fill pattern">
                     {FILL_PATTERNS.map((pattern) => (
                       <button
                         type="button"
@@ -2020,7 +1994,7 @@ export function LcdStudio() {
                 )}
 
                 {editTool === 'polygon' && polygonPoints.length > 0 && (
-                  <div className="polygon-actions">
+                  <div className="polygon-actions tool-options">
                     <span>{polygonPoints.length} point{polygonPoints.length === 1 ? '' : 's'}</span>
                     <Button type="button" size="sm" variant="default" disabled={polygonPoints.length < 3} onClick={commitPolygon}>
                       Close

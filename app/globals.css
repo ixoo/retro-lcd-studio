@@ -377,67 +377,42 @@
   border-top: 1px solid #2e3530;
 }
 
-.edit-tool-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.edit-tool-switch,
-.edit-history,
-.geometry-tool-switch,
+.edit-tool-palette,
 .fill-pattern-picker {
-  display: flex;
-  align-items: center;
   margin: 0;
   padding: 0;
   border: 0;
 }
 
-.edit-tool-switch {
-  flex: 1;
-  min-width: 0;
-  gap: 0.125rem;
+.edit-tool-palette {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.2rem;
   padding: 0.15rem;
   border-radius: 0.55rem;
   background: #222824;
 }
 
-.edit-tool-switch button {
-  flex: 1;
+.edit-tool-palette button {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, auto);
+  justify-content: start;
+  align-items: center;
   min-width: 0;
-  gap: 0.2rem;
-  padding-inline: 0.35rem;
+  gap: 0.35rem;
+  height: 2.25rem;
+  padding-inline: 0.55rem;
   font-size: 0.72rem;
 }
 
-.edit-history {
-  gap: 0.125rem;
-}
-
-.geometry-tool-switch {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.2rem;
-  padding: 0.15rem;
-  border-radius: 0.55rem;
-  background: #222824;
-}
-
-.geometry-tool-switch button {
-  display: grid;
-  justify-items: center;
-  gap: 0.15rem;
-  min-width: 0;
-  height: auto;
-  padding: 0.4rem 0.15rem;
-  font-size: 0.62rem;
-}
-
-.geometry-tool-switch svg {
+.edit-tool-palette svg {
   width: 0.95rem;
   height: 0.95rem;
+}
+
+.tool-options {
+  padding-top: 0.65rem;
+  border-top: 1px solid #2e3530;
 }
 
 .fill-pattern-picker {
@@ -912,11 +887,10 @@
 
 @media (pointer: coarse) {
   .panel-toolbar button,
-  .edit-tool-row button,
+  .edit-tool-palette button,
   .guide-callout,
   .sprite-choice,
   .font-choice,
-  .geometry-tool-switch button,
   .pattern-choice,
   .text-size-value input,
   .preset-option,
