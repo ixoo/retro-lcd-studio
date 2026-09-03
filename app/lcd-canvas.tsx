@@ -14,6 +14,7 @@ export type LcdAppearance = {
   background: string;
   pixel: string;
   inverted: boolean;
+  gridVisible: boolean;
   /** Active pixel dimensions in millimetres. */
   pixelWidthMm: number;
   pixelHeightMm: number;
@@ -176,14 +177,27 @@ fn vertexMain(@builtin(vertex_index) index: u32) -> VertexOutput {
   return output;
 }
 
-fn activePixelDistance(local: vec2<f32>) -> f32 {
-  let dimensions = uniforms.bitmapSize;
+fn gridCoordinates(local: vec2<f32>) -> vec2<f32> {
   let pixelSizeMm = uniforms.geometryMm.xy;
   let pitchMm = pixelSizeMm + vec2<f32>(uniforms.geometryMm.z);
-  let grid = vec2<f32>(
+  return vec2<f32>(
     local.x / pitchMm.x - uniforms.bitmapOffsetCells.x,
     -local.y / pitchMm.y - uniforms.bitmapOffsetCells.y
   );
+}
+
+fn cellPixelDistance(grid: vec2<f32>) -> f32 {
+  let pixelSizeMm = uniforms.geometryMm.xy;
+  let pitchMm = pixelSizeMm + vec2<f32>(uniforms.geometryMm.z);
+  let withinCell = fract(grid);
+  let fromCenterMm = (withinCell - vec2<f32>(0.5)) * pitchMm;
+  let edgeDistanceMm = abs(fromCenterMm) - 0.5 * pixelSizeMm;
+  return max(edgeDistanceMm.x, edgeDistanceMm.y);
+}
+
+fn activePixelDistance(local: vec2<f32>) -> f32 {
+  let dimensions = uniforms.bitmapSize;
+  let grid = gridCoordinates(local);
   let cell = floor(grid);
   let insideBitmap = cell.x >= 0.0 && cell.y >= 0.0
     && cell.x < dimensions.x && cell.y < dimensions.y;
@@ -193,16 +207,14 @@ fn activePixelDistance(local: vec2<f32>) -> f32 {
     pixelValue = textureLoad(bitmapTexture, vec2<i32>(cell), 0).r;
   }
 
-  let isInverted = uniforms.background.a > 0.5;
+  let appearanceFlags = u32(uniforms.background.a + 0.5);
+  let isInverted = (appearanceFlags & 1u) != 0u;
   let isRenderedOn = select(pixelValue == 1u, pixelValue == 0u, isInverted);
   if (!isRenderedOn) {
     return 1000.0;
   }
 
-  let withinCell = fract(grid);
-  let fromCenterMm = (withinCell - vec2<f32>(0.5)) * pitchMm;
-  let edgeDistanceMm = abs(fromCenterMm) - 0.5 * pixelSizeMm;
-  return max(edgeDistanceMm.x, edgeDistanceMm.y);
+  return cellPixelDistance(grid);
 }
 
 @fragment
@@ -220,12 +232,21 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   let antialias = max(footprint * 0.72, 0.001);
   let pixelDistance = activePixelDistance(local);
   let shadowDistance = activePixelDistance(local - uniforms.shadowOffsetMm);
+  let gridDistance = cellPixelDistance(gridCoordinates(local));
   let pixelCoverage = 1.0 - smoothstep(-antialias, antialias, pixelDistance);
   let shadowFeather = max(uniforms.geometryMm.w, antialias);
   let shadowCoverage = (1.0 - smoothstep(-shadowFeather, shadowFeather, shadowDistance))
     * uniforms.shadowOpacity;
 
-  var color = mix(uniforms.background.rgb, vec3<f32>(0.0), shadowCoverage);
+  let appearanceFlags = u32(uniforms.background.a + 0.5);
+  let gridVisible = (appearanceFlags & 2u) != 0u;
+  let minimumPixelSize = min(uniforms.geometryMm.x, uniforms.geometryMm.y);
+  let gridFade = 1.0 - smoothstep(minimumPixelSize * 0.25, minimumPixelSize * 0.55, footprint);
+  let gridCoverage = (1.0 - smoothstep(antialias, antialias * 2.2, abs(gridDistance)))
+    * gridFade * select(0.0, 0.18, gridVisible);
+
+  var color = mix(uniforms.background.rgb, uniforms.pixelColor.rgb, gridCoverage);
+  color = mix(color, vec3<f32>(0.0), shadowCoverage);
   color = mix(color, uniforms.pixelColor.rgb, pixelCoverage * uniforms.pixelColor.a);
   return vec4<f32>(color, 1.0);
 }
@@ -517,7 +538,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
               const pixelRatio = canvas!.width / Math.max(canvas!.getBoundingClientRect().width, 1);
               const background = hexToRgba(appearanceRef.current.background);
               const pixel = hexToRgba(appearanceRef.current.pixel);
-              background[3] = appearanceRef.current.inverted ? 1 : 0;
+              background[3] = (appearanceRef.current.inverted ? 1 : 0)
+                + (appearanceRef.current.gridVisible ? 2 : 0);
               const values = new Float32Array([
                 canvas!.width, canvas!.height, bitmapWidth, bitmapHeight,
                 projection.inv00, projection.inv01, projection.inv10, projection.inv11,

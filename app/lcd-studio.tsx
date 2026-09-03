@@ -105,6 +105,7 @@ const DEFAULT_APPEARANCE: LcdAppearance = {
   background: '#aeb5a7',
   pixel: '#111512',
   inverted: false,
+  gridVisible: false,
   pixelWidthMm: 1,
   pixelHeightMm: 1,
   gapMm: 0.18,
@@ -959,6 +960,11 @@ export function LcdStudio() {
     setActionStatus(inverted ? 'Pixel states inverted' : 'Pixel states normal');
   };
 
+  const setGridVisible = (gridVisible: boolean) => {
+    setAppearance((current) => ({ ...current, gridVisible }));
+    setActionStatus(gridVisible ? 'Pixel grid visible' : 'Pixel grid hidden');
+  };
+
   return (
     <main className="lcd-app" style={{ background: appearance.background }}>
       <aside
@@ -1071,14 +1077,25 @@ export function LcdStudio() {
                 <ColorControl label="Background" value={appearance.background} onChange={(background) => setAppearance((current) => ({ ...current, background }))} />
               </div>
 
-              <div className="toggle-control">
-                <label htmlFor="inverted-rendering">Invert pixels</label>
-                <Switch
-                  id="inverted-rendering"
-                  checked={appearance.inverted}
-                  aria-label="Invert pixels"
-                  onCheckedChange={setInvertedRendering}
-                />
+              <div className="style-toggles">
+                <div className="toggle-control">
+                  <label htmlFor="inverted-rendering">Invert pixels</label>
+                  <Switch
+                    id="inverted-rendering"
+                    checked={appearance.inverted}
+                    aria-label="Invert pixels"
+                    onCheckedChange={setInvertedRendering}
+                  />
+                </div>
+                <div className="toggle-control">
+                  <label htmlFor="pixel-grid">Pixel grid</label>
+                  <Switch
+                    id="pixel-grid"
+                    checked={appearance.gridVisible ?? false}
+                    aria-label="Show pixel grid"
+                    onCheckedChange={setGridVisible}
+                  />
+                </div>
               </div>
             </section>
 

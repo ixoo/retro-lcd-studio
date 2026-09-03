@@ -375,11 +375,18 @@
   gap: 0.5rem;
 }
 
+.style-toggles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
 .toggle-control {
   display: flex;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.5rem;
   padding: 0.7rem 0.75rem;
   border: 1px solid #343c36;
   border-radius: 0.48rem;
@@ -387,6 +394,7 @@
 }
 
 .toggle-control label {
+  min-width: 0;
   color: #cbd3c9;
   font-size: 0.875rem;
 }
