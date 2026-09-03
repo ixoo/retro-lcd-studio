@@ -52,6 +52,7 @@ type LcdCanvasProps = {
   appearance: LcdAppearance;
   onPixelChange: (row: number, column: number, value: 0 | 1) => void;
   onStamp: (row: number, column: number) => void;
+  onStampScale: (steps: number) => void;
   onTextStart: (row: number, column: number) => void;
   onTextMove: (row: number, column: number) => void;
   onGeometryPreview: (start: { row: number; column: number }, end: { row: number; column: number }, constrain: boolean) => void;
@@ -461,6 +462,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       appearance,
       onPixelChange,
       onStamp,
+      onStampScale,
       onTextStart,
       onTextMove,
       onGeometryPreview,
@@ -488,6 +490,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const appearanceRef = useRef(appearance);
     const onPixelChangeRef = useRef(onPixelChange);
     const onStampRef = useRef(onStamp);
+    const onStampScaleRef = useRef(onStampScale);
     const onTextStartRef = useRef(onTextStart);
     const onTextMoveRef = useRef(onTextMove);
     const onGeometryPreviewRef = useRef(onGeometryPreview);
@@ -529,6 +532,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       geometryConstrain?: boolean;
     }>(null);
     const touchPointersRef = useRef(new Map<number, { x: number; y: number }>());
+    const stampScaleWheelDeltaRef = useRef(0);
     const touchGestureRef = useRef<null | {
       pointerIds: [number, number];
       initialDistance: number;
@@ -901,6 +905,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     useEffect(() => {
       onPixelChangeRef.current = onPixelChange;
       onStampRef.current = onStamp;
+      onStampScaleRef.current = onStampScale;
       onTextStartRef.current = onTextStart;
       onTextMoveRef.current = onTextMove;
       onGeometryPreviewRef.current = onGeometryPreview;
@@ -914,6 +919,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       onPaintEndRef.current = onPaintEnd;
       modeRef.current = mode;
       editToolRef.current = editTool;
+      if (mode !== 'edit') dragRef.current = null;
       if (mode !== 'edit' || editTool !== 'stamp') {
         stampPreviewCellRef.current = null;
         scheduleDraw();
@@ -922,7 +928,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         textCursorCellRef.current = null;
         scheduleDraw();
       }
-    }, [editTool, mode, onGeometryCancel, onGeometryCommit, onGeometryHover, onGeometryPoint, onGeometryPreview, onPaintEnd, onPaintStart, onPixelChange, onSelectionChange, onSelectionEnd, onStamp, onTextMove, onTextStart]);
+    }, [editTool, mode, onGeometryCancel, onGeometryCommit, onGeometryHover, onGeometryPoint, onGeometryPreview, onPaintEnd, onPaintStart, onPixelChange, onSelectionChange, onSelectionEnd, onStamp, onStampScale, onTextMove, onTextStart]);
 
     useEffect(() => {
       if (mode !== 'edit' || editTool !== 'text') {
@@ -1283,6 +1289,23 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
 
     const handleWheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
       event.preventDefault();
+      if (modeRef.current === 'edit' && editToolRef.current === 'stamp' && event.shiftKey) {
+        const rawDelta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+        const deltaUnit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 200 : 1;
+        const wheelDelta = rawDelta * deltaUnit;
+        if (stampScaleWheelDeltaRef.current !== 0
+          && Math.sign(stampScaleWheelDeltaRef.current) !== Math.sign(wheelDelta)) {
+          stampScaleWheelDeltaRef.current = 0;
+        }
+        stampScaleWheelDeltaRef.current += wheelDelta;
+        const steps = Math.trunc(Math.abs(stampScaleWheelDeltaRef.current) / 80);
+        if (steps > 0) {
+          onStampScaleRef.current((stampScaleWheelDeltaRef.current < 0 ? 1 : -1) * steps);
+          stampScaleWheelDeltaRef.current %= 80;
+        }
+        return;
+      }
+      stampScaleWheelDeltaRef.current = 0;
       const canvas = canvasRef.current;
       if (!canvas) return;
       const camera = cameraRef.current;

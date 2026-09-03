@@ -1425,6 +1425,7 @@ export function LcdStudio() {
   const bitmapOffsetRef = useRef<[number, number]>(INITIAL_BITMAP_OFFSET);
   const paintBaseRef = useRef<BitmapFrame | null>(null);
   const textSessionRef = useRef<TextSession | null>(null);
+  const stampScaleRef = useRef(100);
 
   const [mode, setMode] = useState<LcdMode>('view');
   const [editTool, setEditTool] = useState<LcdEditTool>('pen');
@@ -1499,6 +1500,17 @@ export function LcdStudio() {
     setPolygonPoints([]);
     setEditTool(nextTool);
   };
+
+  const changeStampScale = useCallback((nextScale: number) => {
+    const scale = Math.min(400, Math.max(25, Math.round(nextScale / 25) * 25));
+    stampScaleRef.current = scale;
+    setStampScalePercent(scale);
+    setActionStatus(`Stamp scale: ${scale}%`);
+  }, []);
+
+  const nudgeStampScale = useCallback((steps: number) => {
+    changeStampScale(stampScaleRef.current + steps * 25);
+  }, [changeStampScale]);
 
   const replaceBitmap = useCallback((next: string[], recordHistory = true, nextOffsetCells = bitmapOffsetRef.current) => {
     const current = bitmapRef.current;
@@ -1879,21 +1891,20 @@ export function LcdStudio() {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isTyping = target?.matches('textarea, input, [contenteditable="true"]');
-      const isGeometryTool = editTool === 'line' || editTool === 'rectangle' || editTool === 'ellipse' || editTool === 'polygon';
-      if (!event.repeat && mode === 'edit' && isGeometryTool
+      const hasSpecialKeyHint = editTool === 'stamp'
+        || editTool === 'line'
+        || editTool === 'rectangle'
+        || editTool === 'ellipse'
+        || editTool === 'polygon';
+      if (!event.repeat && mode === 'edit' && hasSpecialKeyHint
         && (event.key === 'Shift' || event.key === 'Enter' || event.key === 'Escape')) {
         setGestureHintRevision((revision) => revision + 1);
       }
-      if (event.key === 'Escape' && textSessionRef.current) {
+      if (event.key === 'Escape' && mode === 'edit') {
         event.preventDefault();
-        stopTextSession();
-        setActionStatus('Text insertion cancelled');
-        return;
-      }
-      if (event.key === 'Escape' && editTool === 'polygon' && polygonPoints.length > 0) {
-        event.preventDefault();
-        cancelPolygon();
-        setActionStatus('Polygon cancelled');
+        setSelection(null);
+        chooseMode('view');
+        setActionStatus('Returned to view');
         return;
       }
       if (event.key === 'Enter' && editTool === 'polygon' && polygonPoints.length > 0) {
@@ -1913,7 +1924,7 @@ export function LcdStudio() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cancelPolygon, chooseMode, commitPolygon, editTool, mode, polygonPoints.length, redo, stopTextSession, undo]);
+  }, [chooseMode, commitPolygon, editTool, mode, polygonPoints.length, redo, undo]);
 
   const loadBitmapAction = useCallback(async (source: string) => {
     const parsed = parseBitmap(source);
@@ -2228,10 +2239,7 @@ export function LcdStudio() {
                         min={25}
                         max={400}
                         step={25}
-                        onChange={(nextScale) => {
-                          setStampScalePercent(nextScale);
-                          setActionStatus(`Stamp scale: ${nextScale}%`);
-                        }}
+                        onChange={changeStampScale}
                       />
                     </div>
                     <div className="sprite-grid clipboard-sprite-grid">
@@ -2433,6 +2441,7 @@ export function LcdStudio() {
           selection={mode === 'edit' && editTool === 'select' ? selection : null}
           onPixelChange={setPixel}
           onStamp={stampAt}
+          onStampScale={nudgeStampScale}
           onTextStart={beginTextAt}
           onTextMove={moveTextTo}
           onGeometryPreview={previewGeometry}
@@ -2456,47 +2465,47 @@ export function LcdStudio() {
             </>
           ) : editTool === 'pen' ? (
             <>
-              <span className="mouse-gesture-hint"><strong>Drag</strong> paint · <strong>Shift</strong> pan · <strong>Option</strong> rotate · <strong>Scroll</strong> zoom</span>
+              <span className="mouse-gesture-hint"><strong>Drag</strong> paint · <strong>Shift</strong> pan · <strong>Scroll</strong> zoom · <strong>Esc</strong> view</span>
               <span className="touch-gesture-hint"><strong>1 finger</strong> paints · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
             </>
           ) : editTool === 'text' ? (
             <>
-              <span className="mouse-gesture-hint"><strong>Click</strong> to type · <strong>Shift+Enter</strong> line · <strong>Enter</strong> stamp</span>
+              <span className="mouse-gesture-hint"><strong>Click</strong> to type · <strong>Shift+Enter</strong> line · <strong>Enter</strong> stamp · <strong>Esc</strong> view</span>
               <span className="touch-gesture-hint"><strong>Tap</strong> to type · <strong>Drag</strong> position · <strong>Enter</strong> stamp</span>
             </>
           ) : editTool === 'stamp' ? (
             <>
-              <span className="mouse-gesture-hint"><strong>Click</strong> stamp · <strong>Shift</strong> pan · <strong>Option</strong> rotate · <strong>Scroll</strong> zoom</span>
+              <span className="mouse-gesture-hint"><strong>Click</strong> stamp · <strong>Shift+Scroll</strong> scale · <strong>Scroll</strong> zoom · <strong>Esc</strong> view</span>
               <span className="touch-gesture-hint"><strong>Tap</strong> stamp · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
             </>
           ) : editTool === 'line' ? (
             <>
-              <span className="mouse-gesture-hint"><strong>Drag</strong> line · <strong>Shift</strong> snap</span>
+              <span className="mouse-gesture-hint"><strong>Drag</strong> line · <strong>Shift</strong> snap · <strong>Esc</strong> view</span>
               <span className="touch-gesture-hint"><strong>Drag</strong> line · <strong>2 fingers</strong> navigate</span>
             </>
           ) : editTool === 'rectangle' ? (
             <>
-              <span className="mouse-gesture-hint"><strong>Drag</strong> rectangle · <strong>Shift</strong> square</span>
+              <span className="mouse-gesture-hint"><strong>Drag</strong> rectangle · <strong>Shift</strong> square · <strong>Esc</strong> view</span>
               <span className="touch-gesture-hint"><strong>Drag</strong> rectangle · <strong>2 fingers</strong> navigate</span>
             </>
           ) : editTool === 'ellipse' ? (
             <>
-              <span className="mouse-gesture-hint"><strong>Drag</strong> ellipse · <strong>Shift</strong> circle</span>
+              <span className="mouse-gesture-hint"><strong>Drag</strong> ellipse · <strong>Shift</strong> circle · <strong>Esc</strong> view</span>
               <span className="touch-gesture-hint"><strong>Drag</strong> ellipse · <strong>2 fingers</strong> navigate</span>
             </>
           ) : editTool === 'polygon' ? (
             <>
-              <span className="mouse-gesture-hint"><strong>Click</strong> points · <strong>Enter</strong> close · <strong>Esc</strong> cancel</span>
+              <span className="mouse-gesture-hint"><strong>Click</strong> points · <strong>Enter</strong> close · <strong>Esc</strong> view</span>
               <span className="touch-gesture-hint"><strong>Tap</strong> points · tap first point or <strong>Close</strong></span>
             </>
           ) : editTool === 'fill' ? (
             <>
-              <span className="mouse-gesture-hint"><strong>Click</strong> connected region to fill</span>
+              <span className="mouse-gesture-hint"><strong>Click</strong> connected region to fill · <strong>Esc</strong> view</span>
               <span className="touch-gesture-hint"><strong>Tap</strong> connected region to fill</span>
             </>
           ) : (
             <>
-              <span className="mouse-gesture-hint"><strong>Drag</strong> select · <strong>Shift</strong> pan · <strong>Scroll</strong> zoom</span>
+              <span className="mouse-gesture-hint"><strong>Drag</strong> select · <strong>Shift</strong> pan · <strong>Scroll</strong> zoom · <strong>Esc</strong> view</span>
               <span className="touch-gesture-hint"><strong>Drag</strong> select · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
             </>
           )}
