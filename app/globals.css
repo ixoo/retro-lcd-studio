@@ -118,6 +118,10 @@
   cursor: crosshair;
 }
 
+.lcd-canvas-wrap[data-mode='edit'][data-edit-tool='stamp'] .lcd-canvas {
+  cursor: copy;
+}
+
 .lcd-canvas:active {
   cursor: grabbing;
 }
@@ -309,53 +313,66 @@
   padding: 0.1rem 0.1rem 0;
 }
 
-.bitmap-picker {
-  width: 18.5rem;
+.edit-tools {
+  display: grid;
   gap: 0.65rem;
-  border: 1px solid #414a42;
-  background: #171b19;
+  padding-top: 0.7rem;
+  border-top: 1px solid #2e3530;
 }
 
-.bitmap-picker-title {
-  color: #aeb8ad;
-  font: 650 0.6875rem/1 var(--font-geist-mono), monospace;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.import-image {
-  width: 100%;
-  justify-content: flex-start;
-}
-
-.bitmap-picker-divider {
+.edit-tool-row {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  color: #7f8980;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.edit-tool-switch,
+.edit-history {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.edit-tool-switch {
+  gap: 0.125rem;
+  padding: 0.15rem;
+  border-radius: 0.55rem;
+  background: #222824;
+}
+
+.edit-history {
+  gap: 0.125rem;
+}
+
+.sprite-library {
+  display: grid;
+  width: 100%;
+  gap: 0.5rem;
+}
+
+.sprite-library > span {
+  color: #8f998f;
   font: 650 0.625rem/1 var(--font-geist-mono), monospace;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
-.bitmap-picker-divider::after {
-  height: 1px;
-  flex: 1;
-  background: #343c36;
-  content: '';
-}
-
-.bitmap-picker-grid {
+.sprite-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-
-.bitmap-choice {
-  display: grid;
-  min-width: 0;
+  width: 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.4rem;
-  padding: 0.4rem;
+}
+
+.sprite-choice {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 0.3rem;
+  padding: 0.3rem;
   border: 1px solid #3b443d;
   border-radius: 0.5rem;
   color: #cbd3c9;
@@ -363,30 +380,30 @@
   cursor: pointer;
 }
 
-.bitmap-choice:hover,
-.bitmap-choice:focus-visible {
+.sprite-choice:hover,
+.sprite-choice:focus-visible {
   border-color: #687269;
   background: #252b27;
 }
 
-.bitmap-choice[aria-pressed='true'] {
+.sprite-choice[aria-pressed='true'] {
   border-color: #d7ff45;
   box-shadow: 0 0 0 1px rgb(215 255 69 / 14%);
 }
 
-.bitmap-choice svg {
+.sprite-choice svg {
   display: block;
   width: 100%;
   border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 0.3rem;
 }
 
-.bitmap-choice span {
+.sprite-choice span {
   overflow: hidden;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   line-height: 1.2;
-  text-align: left;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -659,10 +676,6 @@
     row-gap: 0.45rem;
   }
 
-  .bitmap-picker {
-    width: min(18.5rem, calc(100vw - 1.5rem));
-  }
-
   .gesture-hint {
     bottom: 0.65rem;
     padding: 0.5rem 0.65rem;
@@ -697,8 +710,9 @@
 
 @media (pointer: coarse) {
   .panel-toolbar button,
+  .edit-tool-row button,
   .guide-callout,
-  .bitmap-choice,
+  .sprite-choice,
   .preset-option,
   .toggle-control {
     min-height: 2.75rem;

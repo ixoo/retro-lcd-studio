@@ -34,8 +34,10 @@ type LcdCanvasProps = {
   bitmap: string[];
   bitmapOffsetCells: [number, number];
   mode: LcdMode;
+  editTool: 'pen' | 'stamp';
   appearance: LcdAppearance;
   onPixelChange: (row: number, column: number, value: 0 | 1) => void;
+  onStamp: (row: number, column: number) => void;
   onPaintStart?: () => void;
   onPaintEnd?: () => void;
 };
@@ -308,8 +310,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       bitmap,
       bitmapOffsetCells,
       mode,
+      editTool,
       appearance,
       onPixelChange,
+      onStamp,
       onPaintStart,
       onPaintEnd,
     },
@@ -321,9 +325,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const bitmapOffsetRef = useRef(bitmapOffsetCells);
     const appearanceRef = useRef(appearance);
     const onPixelChangeRef = useRef(onPixelChange);
+    const onStampRef = useRef(onStamp);
     const onPaintStartRef = useRef(onPaintStart);
     const onPaintEndRef = useRef(onPaintEnd);
     const modeRef = useRef(mode);
+    const editToolRef = useRef(editTool);
     const frameRef = useRef<number | null>(null);
     const [rendererState, setRendererState] = useState<'loading' | 'ready' | 'unsupported' | 'error'>('loading');
     const cameraRef = useRef<Camera>({
@@ -337,7 +343,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     });
     const dragRef = useRef<null | {
       pointerId: number;
-      kind: 'rotate' | 'roll' | 'pan' | 'paint';
+      kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'stamp';
       x: number;
       y: number;
       paintValue?: 0 | 1;
@@ -618,10 +624,12 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
 
     useEffect(() => {
       onPixelChangeRef.current = onPixelChange;
+      onStampRef.current = onStamp;
       onPaintStartRef.current = onPaintStart;
       onPaintEndRef.current = onPaintEnd;
       modeRef.current = mode;
-    }, [mode, onPaintEnd, onPaintStart, onPixelChange]);
+      editToolRef.current = editTool;
+    }, [editTool, mode, onPaintEnd, onPaintStart, onPixelChange, onStamp]);
 
     const cellAtPointer = (clientX: number, clientY: number) => {
       const canvas = canvasRef.current;
@@ -650,6 +658,15 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       if (key === drag.lastCell) return;
       drag.lastCell = key;
       onPixelChangeRef.current(cell.row, cell.column, drag.paintValue);
+    };
+
+    const stampAtPointer = (clientX: number, clientY: number) => {
+      const drag = dragRef.current;
+      if (!drag || drag.kind !== 'stamp' || drag.lastCell) return;
+      const cell = cellAtPointer(clientX, clientY);
+      if (!cell) return;
+      drag.lastCell = `${cell.row}:${cell.column}`;
+      onStampRef.current(cell.row, cell.column);
     };
 
     const beginTouchGesture = () => {
@@ -694,7 +711,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
 
       const shouldPan = event.shiftKey || event.button === 1 || event.button === 2;
       const shouldRoll = event.altKey && !shouldPan;
-      let kind: 'rotate' | 'roll' | 'pan' | 'paint' = shouldPan
+      let kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'stamp' = shouldPan
         ? 'pan'
         : shouldRoll
           ? 'roll'
@@ -704,8 +721,12 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       if (modeRef.current === 'edit' && !shouldPan && !shouldRoll) {
         const cell = cellAtPointer(event.clientX, event.clientY);
         if (!cell) return;
-        kind = 'paint';
-        paintValue = bitmapRef.current[cell.row]?.[cell.column] === '1' ? 0 : 1;
+        if (editToolRef.current === 'stamp') {
+          kind = 'stamp';
+        } else {
+          kind = 'paint';
+          paintValue = bitmapRef.current[cell.row]?.[cell.column] === '1' ? 0 : 1;
+        }
       }
 
       dragRef.current = {
@@ -722,6 +743,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         if (event.pointerType !== 'touch') {
           paintAtPointer(event.clientX, event.clientY);
         }
+      } else if (kind === 'stamp' && event.pointerType !== 'touch') {
+        stampAtPointer(event.clientX, event.clientY);
       }
     };
 
@@ -783,7 +806,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         cameraRef.current.panX += deltaX;
         cameraRef.current.panY -= deltaY;
         scheduleDraw();
-      } else {
+      } else if (drag.kind === 'paint') {
         paintAtPointer(event.clientX, event.clientY);
       }
     };
@@ -817,6 +840,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           paintAtPointer(event.clientX, event.clientY);
         }
         onPaintEndRef.current?.();
+      } else if (dragRef.current.kind === 'stamp') {
+        if (!dragRef.current.lastCell && event.type === 'pointerup') {
+          stampAtPointer(event.clientX, event.clientY);
+        }
       }
       dragRef.current = null;
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -847,7 +874,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     };
 
     return (
-      <div className="lcd-canvas-wrap" data-mode={mode}>
+      <div className="lcd-canvas-wrap" data-mode={mode} data-edit-tool={editTool}>
         <canvas
           ref={canvasRef}
           className="lcd-canvas"

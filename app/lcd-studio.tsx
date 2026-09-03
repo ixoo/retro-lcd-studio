@@ -11,6 +11,7 @@ import {
   Rotate3D,
   RotateCcw,
   Settings2,
+  Stamp,
   Undo2,
 } from 'lucide-react';
 
@@ -21,12 +22,6 @@ import {
   type LcdMode,
 } from '@/app/lcd-canvas';
 import { Button } from '@/components/ui/button';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTitle,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
@@ -46,12 +41,7 @@ const INITIAL_BITMAP_OFFSET: [number, number] = [
   -INITIAL_BITMAP.length / 2,
 ];
 
-const DEMO_BITMAPS = [
-  {
-    id: 'empty',
-    label: 'Empty',
-    rows: ['0'],
-  },
+const SPRITE_BITMAPS = [
   {
     id: 'lcd',
     label: 'LCD',
@@ -100,7 +90,59 @@ const DEMO_BITMAPS = [
       '010101010101',
     ],
   },
+  {
+    id: 'heart',
+    label: 'Heart',
+    rows: [
+      '01100110',
+      '11111111',
+      '11111111',
+      '01111110',
+      '00111100',
+      '00011000',
+    ],
+  },
+  {
+    id: 'star',
+    label: 'Star',
+    rows: [
+      '00010000',
+      '00010000',
+      '11010110',
+      '01111100',
+      '00111000',
+      '01101100',
+      '01000100',
+    ],
+  },
+  {
+    id: 'ghost',
+    label: 'Ghost',
+    rows: [
+      '00111100',
+      '01111110',
+      '11011011',
+      '11111111',
+      '11111111',
+      '11011011',
+      '10010001',
+    ],
+  },
+  {
+    id: 'bolt',
+    label: 'Bolt',
+    rows: [
+      '00011000',
+      '00110000',
+      '01111100',
+      '00011000',
+      '00110000',
+      '01100000',
+    ],
+  },
 ];
+
+type EditTool = 'pen' | 'stamp';
 
 const DEFAULT_APPEARANCE: LcdAppearance = {
   background: '#aeb5a7',
@@ -808,6 +850,8 @@ export function LcdStudio() {
   const paintBaseRef = useRef<BitmapFrame | null>(null);
 
   const [mode, setMode] = useState<LcdMode>('view');
+  const [editTool, setEditTool] = useState<EditTool>('pen');
+  const [selectedSpriteId, setSelectedSpriteId] = useState('smile');
   const [bitmap, setBitmap] = useState(INITIAL_BITMAP);
   const [bitmapOffsetCells, setBitmapOffsetCells] = useState<[number, number]>(INITIAL_BITMAP_OFFSET);
   const [appearance, setAppearance] = useState(DEFAULT_APPEARANCE);
@@ -815,7 +859,6 @@ export function LcdStudio() {
   const [future, setFuture] = useState<BitmapFrame[]>([]);
   const [exporting, setExporting] = useState(false);
   const [importingImage, setImportingImage] = useState(false);
-  const [bitmapPickerOpen, setBitmapPickerOpen] = useState(false);
   const [actionStatus, setActionStatus] = useState('Ready');
 
   const replaceBitmap = useCallback((next: string[], recordHistory = true, nextOffsetCells = bitmapOffsetRef.current) => {
@@ -869,6 +912,55 @@ export function LcdStudio() {
     next[nextRow] = `${next[nextRow].slice(0, nextColumn)}${value}${next[nextRow].slice(nextColumn + 1)}`;
     const currentOffset = bitmapOffsetRef.current;
     replaceBitmap(next, false, [currentOffset[0] - leftPad, currentOffset[1] - topPad]);
+  };
+
+  const stampAt = (row: number, column: number) => {
+    const sprite = SPRITE_BITMAPS.find((item) => item.id === selectedSpriteId);
+    if (!sprite) return;
+
+    const current = bitmapRef.current;
+    const width = current[0].length;
+    const height = current.length;
+    const spriteWidth = sprite.rows[0].length;
+    const spriteHeight = sprite.rows.length;
+    const spriteLeft = column - Math.floor(spriteWidth / 2);
+    const spriteTop = row - Math.floor(spriteHeight / 2);
+    const leftPad = Math.max(0, -spriteLeft);
+    const rightPad = Math.max(0, spriteLeft + spriteWidth - width);
+    const topPad = Math.max(0, -spriteTop);
+    const bottomPad = Math.max(0, spriteTop + spriteHeight - height);
+    const nextWidth = width + leftPad + rightPad;
+    const nextHeight = height + topPad + bottomPad;
+
+    if (nextWidth > MAX_BITMAP_DIMENSION || nextHeight > MAX_BITMAP_DIMENSION) {
+      setActionStatus(`Stamp exceeds the ${MAX_BITMAP_DIMENSION} × ${MAX_BITMAP_DIMENSION} technical limit`);
+      return;
+    }
+
+    const blankRow = '0'.repeat(nextWidth);
+    const rows = [
+      ...Array<string>(topPad).fill(blankRow),
+      ...current.map((currentRow) => `${'0'.repeat(leftPad)}${currentRow}${'0'.repeat(rightPad)}`),
+      ...Array<string>(bottomPad).fill(blankRow),
+    ].map((currentRow) => currentRow.split(''));
+    const targetTop = spriteTop + topPad;
+    const targetLeft = spriteLeft + leftPad;
+
+    sprite.rows.forEach((spriteRow, spriteRowIndex) => {
+      for (let spriteColumn = 0; spriteColumn < spriteWidth; spriteColumn += 1) {
+        if (spriteRow[spriteColumn] === '1') {
+          rows[targetTop + spriteRowIndex][targetLeft + spriteColumn] = '1';
+        }
+      }
+    });
+
+    const currentOffset = bitmapOffsetRef.current;
+    const changed = replaceBitmap(
+      rows.map((nextRow) => nextRow.join('')),
+      true,
+      [currentOffset[0] - leftPad, currentOffset[1] - topPad],
+    );
+    if (changed) setActionStatus(`${sprite.label} stamped`);
   };
 
   const beginPaint = () => {
@@ -1029,22 +1121,6 @@ export function LcdStudio() {
     return () => lifecycle.abort();
   }, [loadBitmapAction, resetViewAction]);
 
-  const activeBitmapDemo = DEMO_BITMAPS.find((demo) => {
-    const centeredOffset = centeredBitmapOffset(demo.rows);
-    return bitmapsMatch(bitmap, demo.rows)
-      && bitmapOffsetCells[0] === centeredOffset[0]
-      && bitmapOffsetCells[1] === centeredOffset[1];
-  });
-
-  const applyBitmapDemo = (demoId: string | null) => {
-    const demo = DEMO_BITMAPS.find((item) => item.id === demoId);
-    if (!demo) return;
-    replaceBitmap(demo.rows, true, centeredBitmapOffset(demo.rows));
-    canvasRef.current?.resetView();
-    setBitmapPickerOpen(false);
-    setActionStatus(`Bitmap loaded: ${demo.label}`);
-  };
-
   const importImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
     const file = input.files?.[0];
@@ -1057,7 +1133,6 @@ export function LcdStudio() {
       const rows = await imageFileToBitmap(file);
       replaceBitmap(rows, true, centeredBitmapOffset(rows));
       canvasRef.current?.resetView();
-      setBitmapPickerOpen(false);
       setActionStatus(`${file.name} imported · ${rows[0].length} × ${rows.length} · 1:1`);
     } catch (error) {
       console.error('Unable to import the image.', error);
@@ -1128,57 +1203,25 @@ export function LcdStudio() {
               </fieldset>
 
               <span className="bar-divider" aria-hidden="true" />
-              <Popover open={bitmapPickerOpen} onOpenChange={setBitmapPickerOpen}>
-                <PopoverTrigger
-                  render={(
-                    <Button type="button" size="icon-sm" variant="ghost" aria-label="Open bitmap" title="Open bitmap" />
-                  )}
-                >
-                  <FolderOpen />
-                </PopoverTrigger>
-                <PopoverContent className="bitmap-picker" align="start" sideOffset={8}>
-                  <PopoverTitle className="bitmap-picker-title">Open bitmap</PopoverTitle>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="import-image"
-                    disabled={importingImage}
-                    onClick={() => imageInputRef.current?.click()}
-                  >
-                    <ImagePlus data-icon="inline-start" />
-                    {importingImage ? 'Converting…' : 'Import image'}
-                  </Button>
-                  <input
-                    ref={imageInputRef}
-                    className="sr-only"
-                    type="file"
-                    accept="image/*"
-                    aria-label="Choose an image to convert to a bitmap"
-                    onChange={(event) => void importImage(event)}
-                  />
-                  <span className="bitmap-picker-divider">Demos</span>
-                  <div className="bitmap-picker-grid">
-                    {DEMO_BITMAPS.map((demo) => (
-                      <button
-                        type="button"
-                        className="bitmap-choice"
-                        key={demo.id}
-                        aria-pressed={activeBitmapDemo?.id === demo.id}
-                        onClick={() => applyBitmapDemo(demo.id)}
-                      >
-                        <BitmapThumbnail rows={demo.rows} background={appearance.background} pixel={appearance.pixel} inverted={appearance.inverted} />
-                        <span>{demo.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-              <Button type="button" size="icon-sm" variant="ghost" aria-label="Undo" title="Undo" disabled={past.length === 0} onClick={undo}>
-                <Undo2 />
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Open image"
+                title="Open image"
+                disabled={importingImage}
+                onClick={() => imageInputRef.current?.click()}
+              >
+                {importingImage ? <ImagePlus /> : <FolderOpen />}
               </Button>
-              <Button type="button" size="icon-sm" variant="ghost" aria-label="Redo" title="Redo" disabled={future.length === 0} onClick={redo}>
-                <Redo2 />
-              </Button>
+              <input
+                ref={imageInputRef}
+                className="sr-only"
+                type="file"
+                accept="image/*"
+                aria-label="Choose an image to convert to a bitmap"
+                onChange={(event) => void importImage(event)}
+              />
               <Button type="button" size="icon-sm" variant="ghost" aria-label="Reset view" title="Reset view" onClick={() => canvasRef.current?.resetView()}>
                 <RotateCcw />
               </Button>
@@ -1186,6 +1229,65 @@ export function LcdStudio() {
                 <Download />
               </Button>
             </header>
+
+            {mode === 'edit' && (
+              <div className="edit-tools" aria-label="Edit tools">
+                <div className="edit-tool-row">
+                  <fieldset className="edit-tool-switch" aria-label="Drawing tool">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={editTool === 'pen' ? 'default' : 'ghost'}
+                      aria-pressed={editTool === 'pen'}
+                      onClick={() => setEditTool('pen')}
+                    >
+                      <Pencil data-icon="inline-start" /> Pen
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={editTool === 'stamp' ? 'default' : 'ghost'}
+                      aria-pressed={editTool === 'stamp'}
+                      onClick={() => setEditTool('stamp')}
+                    >
+                      <Stamp data-icon="inline-start" /> Stamp
+                    </Button>
+                  </fieldset>
+                  <fieldset className="edit-history" aria-label="Edit history">
+                    <Button type="button" size="icon-sm" variant="ghost" aria-label="Undo" title="Undo" disabled={past.length === 0} onClick={undo}>
+                      <Undo2 />
+                    </Button>
+                    <Button type="button" size="icon-sm" variant="ghost" aria-label="Redo" title="Redo" disabled={future.length === 0} onClick={redo}>
+                      <Redo2 />
+                    </Button>
+                  </fieldset>
+                </div>
+
+                {editTool === 'stamp' && (
+                  <div className="sprite-library" aria-label="Sprite library">
+                    <span>Pick a sprite</span>
+                    <div className="sprite-grid">
+                      {SPRITE_BITMAPS.map((sprite) => (
+                        <button
+                          type="button"
+                          className="sprite-choice"
+                          key={sprite.id}
+                          aria-label={sprite.label}
+                          aria-pressed={selectedSpriteId === sprite.id}
+                          onClick={() => {
+                            setSelectedSpriteId(sprite.id);
+                            setActionStatus(`${sprite.label} stamp selected`);
+                          }}
+                        >
+                          <BitmapThumbnail rows={sprite.rows} background={appearance.background} pixel={appearance.pixel} inverted={false} />
+                          <span>{sprite.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </section>
 
           <section className="control-group" aria-labelledby="style-heading">
@@ -1279,7 +1381,9 @@ export function LcdStudio() {
           bitmap={bitmap}
           bitmapOffsetCells={bitmapOffsetCells}
           mode={mode}
+          editTool={editTool}
           onPixelChange={setPixel}
+          onStamp={stampAt}
           onPaintStart={beginPaint}
           onPaintEnd={finishPaint}
           appearance={appearance}
@@ -1292,10 +1396,15 @@ export function LcdStudio() {
               <span className="mouse-gesture-hint"><strong>Drag</strong> tilt · <strong>Shift</strong> pan · <strong>Option</strong> rotate · <strong>Scroll</strong> zoom</span>
               <span className="touch-gesture-hint"><strong>1 finger</strong> tilts · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
             </>
-          ) : (
+          ) : editTool === 'pen' ? (
             <>
               <span className="mouse-gesture-hint"><strong>Drag</strong> paint · <strong>Shift</strong> pan · <strong>Option</strong> rotate · <strong>Scroll</strong> zoom</span>
               <span className="touch-gesture-hint"><strong>1 finger</strong> paints · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
+            </>
+          ) : (
+            <>
+              <span className="mouse-gesture-hint"><strong>Click</strong> stamp · <strong>Shift</strong> pan · <strong>Option</strong> rotate · <strong>Scroll</strong> zoom</span>
+              <span className="touch-gesture-hint"><strong>Tap</strong> stamp · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
             </>
           )}
         </div>
