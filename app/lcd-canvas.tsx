@@ -294,38 +294,65 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   let pixelCoverage = 1.0 - smoothstep(-antialias, antialias, pixelDistance);
   let stampCoverage = 1.0 - smoothstep(-antialias, antialias, stampDistance);
   let shadowFeather = max(uniforms.geometryMm.w, antialias);
-  let shadowCoverage = (1.0 - smoothstep(-shadowFeather, shadowFeather, shadowDistance))
+  var shadowCoverage = (1.0 - smoothstep(-shadowFeather, shadowFeather, shadowDistance))
     * uniforms.shadowOpacity;
 
   let appearanceFlags = u32(uniforms.background.a + 0.5);
   let isInverted = (appearanceFlags & 1u) != 0u;
   let gridVisible = (appearanceFlags & 2u) != 0u;
-  let minimumPixelSize = min(uniforms.geometryMm.x, uniforms.geometryMm.y);
-  let gridFade = 1.0 - smoothstep(minimumPixelSize * 0.25, minimumPixelSize * 0.55, footprint);
-  let gridCoverage = (1.0 - smoothstep(0.0, antialias * 0.9, abs(gridDistance)))
-    * gridFade * select(0.0, 0.07, gridVisible);
-
-  var color = mix(uniforms.background.rgb, uniforms.pixelColor.rgb, gridCoverage);
-  color = mix(color, vec3<f32>(0.0), shadowCoverage);
-  color = mix(color, uniforms.pixelColor.rgb, pixelCoverage * uniforms.pixelColor.a);
-  var stampTarget = uniforms.pixelColor.rgb;
-  if (isInverted) {
-    stampTarget = uniforms.background.rgb;
-  }
-  color = mix(color, stampTarget, stampCoverage * 0.42);
   let selectedPixelWasOn = select(
     selectedPixelValue == 1u,
     selectedPixelValue == 0u,
     isInverted
   );
+  let shadowSelectionCell = floor(gridCoordinates(local - uniforms.shadowOffsetMm));
+  let shadowInsideSelection = selectionSize.x > 0.0 && selectionSize.y > 0.0
+    && shadowSelectionCell.x >= selectionOrigin.x && shadowSelectionCell.y >= selectionOrigin.y
+    && shadowSelectionCell.x < selectionEnd.x && shadowSelectionCell.y < selectionEnd.y;
+  let shadowCellInsideBitmap = shadowSelectionCell.x >= 0.0 && shadowSelectionCell.y >= 0.0
+    && shadowSelectionCell.x < uniforms.bitmapSize.x && shadowSelectionCell.y < uniforms.bitmapSize.y;
+  var shadowPixelValue = 0u;
+  if (shadowCellInsideBitmap) {
+    shadowPixelValue = textureLoad(bitmapTexture, vec2<i32>(shadowSelectionCell), 0).r;
+  }
+  let selectedShadowWasOn = select(
+    shadowPixelValue == 1u,
+    shadowPixelValue == 0u,
+    isInverted
+  );
+  if (shadowInsideSelection && selectedShadowWasOn) {
+    shadowCoverage = 0.0;
+  }
+  let minimumPixelSize = min(uniforms.geometryMm.x, uniforms.geometryMm.y);
+  let gridFade = 1.0 - smoothstep(minimumPixelSize * 0.25, minimumPixelSize * 0.55, footprint);
+  let gridCoverage = (1.0 - smoothstep(0.0, antialias * 0.9, abs(gridDistance)))
+    * gridFade * select(0.0, 0.07, gridVisible);
+  let selectedOnMask = select(
+    0.0,
+    1.0,
+    insideSelection && selectedPixelWasOn
+  );
+  let visiblePixelCoverage = pixelCoverage * (1.0 - selectedOnMask);
+
+  var color = mix(uniforms.background.rgb, uniforms.pixelColor.rgb, gridCoverage);
+  color = mix(color, vec3<f32>(0.0), shadowCoverage);
+  color = mix(color, uniforms.pixelColor.rgb, visiblePixelCoverage * uniforms.pixelColor.a);
+  var stampTarget = uniforms.pixelColor.rgb;
+  if (isInverted) {
+    stampTarget = uniforms.background.rgb;
+  }
+  color = mix(color, stampTarget, stampCoverage * 0.42);
   let selectionColor = mix(
     uniforms.background.rgb,
     uniforms.pixelColor.rgb,
     0.46
   );
-  let selectedPixelCoverage = selectionCoverage
-    * select(0.0, 1.0, selectedPixelWasOn);
-  color = mix(color, selectionColor, selectedPixelCoverage * 0.92);
+  let selectedOffMask = select(
+    0.0,
+    1.0,
+    insideSelection && !selectedPixelWasOn
+  );
+  color = mix(color, selectionColor, selectionCoverage * selectedOffMask * 0.96);
   return vec4<f32>(color, 1.0);
 }
 `;
