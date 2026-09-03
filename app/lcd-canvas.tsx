@@ -9,7 +9,7 @@ import {
 } from 'react';
 
 export type LcdMode = 'view' | 'edit';
-export type LcdTexture = 'flat' | 'fine' | 'fibres' | 'mottled';
+export type LcdTexture = 'flat' | 'matte' | 'reflector' | 'aged';
 
 export type LcdAppearance = {
   background: string;
@@ -144,9 +144,9 @@ const MAX_TILT_RADIANS = 1.38;
 
 const TEXTURE_INDEX: Record<LcdTexture, number> = {
   flat: 0,
-  fine: 1,
-  fibres: 2,
-  mottled: 3,
+  matte: 1,
+  reflector: 2,
+  aged: 3,
 };
 
 const SHADER = /* wgsl */ `
@@ -236,19 +236,33 @@ fn texturedBackground(local: vec2<f32>, footprintMm: f32) -> vec3<f32> {
   var variation = 0.0;
 
   if (textureKind == 1) {
-    let featureMm = 0.18;
-    let visibility = 1.0 - smoothstep(featureMm * 0.5, featureMm * 2.0, footprintMm);
-    variation = (valueNoise(local / featureMm) - 0.5) * 0.055 * visibility;
+    // Anti-glare polarizers use microscopic surface roughness. At normal
+    // viewing sizes it reads as a trace of haze, not visible noise.
+    let featureMm = 0.065;
+    let visibility = 1.0 - smoothstep(featureMm * 0.45, featureMm * 2.2, footprintMm);
+    let microRoughness = valueNoise(local / featureMm);
+    let softHaze = valueNoise(local / 0.34);
+    variation = ((microRoughness - 0.5) * 0.010 + (softHaze - 0.5) * 0.003)
+      * visibility;
   } else if (textureKind == 2) {
-    let featureMm = 0.14;
-    let visibility = 1.0 - smoothstep(featureMm * 0.6, featureMm * 2.4, footprintMm);
-    let fibres = valueNoise(local / vec2<f32>(1.8, featureMm));
-    let crossGrain = valueNoise(local / vec2<f32>(0.42, 0.7));
-    variation = ((fibres - 0.5) * 0.052 + (crossGrain - 0.5) * 0.018) * visibility;
+    // A reflective LCD has a diffusing reflector behind the cell. Its grain
+    // is irregular and isotropic, with no fabric-like directionality.
+    let featureMm = 0.16;
+    let visibility = 1.0 - smoothstep(featureMm * 0.5, featureMm * 2.5, footprintMm);
+    let reflectorGrain = valueNoise(local / featureMm);
+    let reflectorBody = valueNoise((local + vec2<f32>(3.7, -2.1)) / 0.72);
+    variation = ((reflectorGrain - 0.5) * 0.014 + (reflectorBody - 0.5) * 0.004)
+      * visibility;
   } else if (textureKind == 3) {
-    let broad = valueNoise(local / 1.6);
-    let detail = valueNoise(local / 0.52);
-    variation = (broad - 0.5) * 0.045 + (detail - 0.5) * 0.018;
+    // Aging and adhesive variation show up as broad, barely perceptible
+    // non-uniformity rather than a repeated texture.
+    let broad = valueNoise((local + vec2<f32>(11.3, 4.6)) / 12.0);
+    let middle = valueNoise((local + vec2<f32>(-5.2, 8.4)) / 3.8);
+    let fine = valueNoise(local / 0.24);
+    let fineVisibility = 1.0 - smoothstep(0.1, 0.55, footprintMm);
+    variation = (broad - 0.5) * 0.018
+      + (middle - 0.5) * 0.006
+      + (fine - 0.5) * 0.002 * fineVisibility;
   }
 
   return clamp(uniforms.background.rgb * (1.0 + variation), vec3<f32>(0.0), vec3<f32>(1.0));

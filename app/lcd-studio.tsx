@@ -151,9 +151,9 @@ const LCD_COLOR_PRESETS = [
 
 const LCD_TEXTURE_PRESETS: Array<{ id: LcdTexture; label: string }> = [
   { id: 'flat', label: 'Flat' },
-  { id: 'fine', label: 'Fine grain' },
-  { id: 'fibres', label: 'Fibres' },
-  { id: 'mottled', label: 'Mottled' },
+  { id: 'matte', label: 'Matte polarizer' },
+  { id: 'reflector', label: 'Diffuse reflector' },
+  { id: 'aged', label: 'Aged film' },
 ];
 
 type BitmapParseResult =
