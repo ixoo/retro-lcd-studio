@@ -427,10 +427,10 @@ function ShadowGuide({ appearance }: { appearance: LcdAppearance }) {
   const blur = Math.min(Math.max(appearance.shadowSoftnessMm * scale, 0.05), 14);
   const xMeasureY = 174;
   const yMeasureX = 220;
-  const softnessTargetX = shadowX - blur * 1.35;
-  const softnessTargetY = shadowY + pixelHeight * 0.22;
-  const opacityTargetX = shadowX + pixelWidth + blur * 0.6;
-  const opacityTargetY = shadowY + pixelHeight + blur * 0.7;
+  const softnessExtent = Math.max(blur * 1.35, 0.75);
+  const softnessMeasureX = shadowX + pixelWidth * 0.22;
+  const softnessTop = shadowY - softnessExtent;
+  const softnessBottom = shadowY + softnessExtent;
 
   return (
     <div className="shadow-guide">
@@ -468,8 +468,8 @@ function ShadowGuide({ appearance }: { appearance: LcdAppearance }) {
           <path d={`M ${yMeasureX - 4} ${pixelBottom} H ${yMeasureX} V ${shadowBottom} H ${yMeasureX - 4}`} />
           <path d={`M ${yMeasureX} ${(pixelBottom + shadowBottom) / 2} H 230 V 104`} />
 
-          <path d={`M ${softnessTargetX} ${softnessTargetY} H 78 V 23`} />
-          <path d={`M ${opacityTargetX} ${opacityTargetY} H 78 V 200`} />
+          <path d={`M ${softnessMeasureX - 4} ${softnessTop} H ${softnessMeasureX} V ${softnessBottom} H ${softnessMeasureX - 4}`} />
+          <path d={`M ${softnessMeasureX} ${(softnessTop + softnessBottom) / 2} H 78 V 23`} />
         </g>
       </svg>
 
@@ -478,9 +478,6 @@ function ShadowGuide({ appearance }: { appearance: LcdAppearance }) {
       </button>
       <button type="button" className="guide-callout shadow-callout shadow-y" onClick={() => focusSlider('shadow-y')}>
         <span>Y offset</span><strong>{formatMillimetres(appearance.shadowOffsetMm[1])}</strong>
-      </button>
-      <button type="button" className="guide-callout shadow-callout shadow-opacity" onClick={() => focusSlider('shadow-opacity')}>
-        <span>Opacity</span><strong>{Math.round(appearance.shadowOpacity * 100)}%</strong>
       </button>
       <button type="button" className="guide-callout shadow-callout shadow-x" onClick={() => focusSlider('shadow-x')}>
         <span>X offset</span><strong>{formatMillimetres(appearance.shadowOffsetMm[0])}</strong>
