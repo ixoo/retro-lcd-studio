@@ -530,12 +530,6 @@ export function LcdStudio() {
         </Button>
       </header>
 
-      <aside className="surface-readout" aria-label="Virtual LCD surface">
-        <span>MONO</span>
-        <strong>VIRTUAL ∞</strong>
-        <i aria-hidden="true" />
-      </aside>
-
       <div className="appearance-drawer" data-open={panelOpen}>
         <button
           type="button"

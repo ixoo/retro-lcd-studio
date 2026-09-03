@@ -200,25 +200,6 @@
   outline-offset: 2px;
 }
 
-.surface-readout {
-  position: absolute;
-  z-index: 2;
-  bottom: 1rem;
-  right: 1rem;
-  display: grid;
-  grid-template-columns: auto auto auto;
-  align-items: center;
-  gap: 0.75rem;
-  height: 2.75rem;
-  padding: 0 0.875rem;
-  border: 1px solid rgb(35 41 36 / 18%);
-  border-radius: 0.7rem;
-  color: #303730;
-  background: rgb(235 240 230 / 44%);
-  font: 600 0.6875rem/1 var(--font-geist-mono), monospace;
-  letter-spacing: 0.08em;
-}
-
 .settings-panel {
   position: absolute;
   inset: 0;
@@ -498,19 +479,6 @@
   white-space: nowrap;
 }
 
-.surface-readout strong {
-  color: #171b19;
-  font-size: 0.75rem;
-}
-
-.surface-readout i {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: #2d5a31;
-  box-shadow: 0 0 0 3px rgb(45 90 49 / 12%);
-}
-
 .gesture-hint {
   position: absolute;
   z-index: 2;
@@ -546,10 +514,6 @@
 }
 
 @media (max-width: 980px) {
-  .surface-readout {
-    display: none;
-  }
-
   .gesture-hint[data-panel-open='true'] {
     margin-left: 0;
   }
