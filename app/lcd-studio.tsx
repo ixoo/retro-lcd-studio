@@ -389,7 +389,7 @@ function GeometryGuide({ appearance }: { appearance: LcdAppearance }) {
         </g>
         <g className="guide-gap-measurement" stroke={appearance.pixel} aria-hidden="true">
           <path d={`M ${gapStart} ${sampleY + pixelHeight + 3} V ${gapMeasureY} H ${gapEnd} V ${sampleY + pixelHeight + 3}`} />
-          <path d={`M ${gapCenter} ${gapMeasureY} H 220 V 178 H 258`} />
+          <path d={`M ${gapCenter} ${gapMeasureY} V 220 H 301 V 200 H 298`} />
         </g>
       </svg>
 
