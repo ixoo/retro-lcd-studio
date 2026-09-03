@@ -479,6 +479,10 @@
   text-transform: uppercase;
 }
 
+.stamp-scale-control {
+  padding: 0.1rem 0.15rem 0.2rem;
+}
+
 .text-tool-panel {
   display: grid;
   gap: 0.55rem;

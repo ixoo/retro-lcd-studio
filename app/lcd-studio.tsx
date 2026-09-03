@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BoxSelect,
   Circle,
@@ -685,6 +685,22 @@ async function imageFileToBitmap(file: File) {
 
 function bitmapsMatch(first: string[], second: string[]) {
   return first.length === second.length && first.every((row, index) => row === second[index]);
+}
+
+function scaleBitmap(rows: string[], scalePercent: number) {
+  if (scalePercent === 100) return rows;
+  const sourceHeight = Math.max(1, rows.length);
+  const sourceWidth = Math.max(1, rows[0]?.length ?? 1);
+  const targetWidth = Math.min(MAX_BITMAP_DIMENSION, Math.max(1, Math.round(sourceWidth * scalePercent / 100)));
+  const targetHeight = Math.min(MAX_BITMAP_DIMENSION, Math.max(1, Math.round(sourceHeight * scalePercent / 100)));
+
+  return Array.from({ length: targetHeight }, (_, targetRow) => {
+    const sourceRow = Math.min(sourceHeight - 1, Math.floor(targetRow * sourceHeight / targetHeight));
+    return Array.from({ length: targetWidth }, (_, targetColumn) => {
+      const sourceColumn = Math.min(sourceWidth - 1, Math.floor(targetColumn * sourceWidth / targetWidth));
+      return rows[sourceRow]?.[sourceColumn] === '1' ? '1' : '0';
+    }).join('');
+  });
 }
 
 function bitmapFramesMatch(first: BitmapFrame, second: BitmapFrame) {
@@ -1413,6 +1429,7 @@ export function LcdStudio() {
   const [mode, setMode] = useState<LcdMode>('view');
   const [editTool, setEditTool] = useState<LcdEditTool>('pen');
   const [selectedSpriteId, setSelectedSpriteId] = useState(CLIPBOARD_SPRITE_ID);
+  const [stampScalePercent, setStampScalePercent] = useState(100);
   const [selectedFontId, setSelectedFontId] = useState<PixelFontId>('terminal');
   const [textPixelSize, setTextPixelSize] = useState(12);
   const [textValue, setTextValue] = useState('');
@@ -1437,6 +1454,12 @@ export function LcdStudio() {
   const [gestureHintRevision, setGestureHintRevision] = useState(0);
   const gestureHintContext = `${mode}:${editTool}:${gestureHintRevision}`;
   const showGestureHint = hiddenGestureHintContext !== gestureHintContext;
+  const stampBitmap = useMemo(() => {
+    const source = selectedSpriteId === CLIPBOARD_SPRITE_ID
+      ? clipboardBitmap ?? ['0']
+      : SPRITE_BITMAPS.find((sprite) => sprite.id === selectedSpriteId)?.rows ?? SPRITE_BITMAPS[0].rows;
+    return scaleBitmap(source, stampScalePercent);
+  }, [clipboardBitmap, selectedSpriteId, stampScalePercent]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setHiddenGestureHintContext(`${mode}:${editTool}:${gestureHintRevision}`), 10_000);
@@ -1686,11 +1709,11 @@ export function LcdStudio() {
 
   const stampAt = (row: number, column: number) => {
     if (selectedSpriteId === CLIPBOARD_SPRITE_ID) {
-      if (clipboardBitmap) placeBitmapAt(clipboardBitmap, 'Selection', row, column);
+      if (clipboardBitmap) placeBitmapAt(stampBitmap, 'Selection', row, column);
       return;
     }
     const sprite = SPRITE_BITMAPS.find((item) => item.id === selectedSpriteId);
-    if (sprite) placeBitmapAt(sprite.rows, sprite.label, row, column);
+    if (sprite) placeBitmapAt(stampBitmap, sprite.label, row, column);
   };
 
   const bitmapFromSelection = useCallback((selectedArea: LcdSelection) => (
@@ -2196,6 +2219,21 @@ export function LcdStudio() {
 
                 {editTool === 'stamp' && (
                   <div className="sprite-library tool-options" aria-label="Sprite library">
+                    <div className="stamp-scale-control">
+                      <ControlSlider
+                        id="stamp-scale"
+                        label="Scale"
+                        value={stampScalePercent}
+                        formattedValue={`${stampScalePercent}%`}
+                        min={25}
+                        max={400}
+                        step={25}
+                        onChange={(nextScale) => {
+                          setStampScalePercent(nextScale);
+                          setActionStatus(`Stamp scale: ${nextScale}%`);
+                        }}
+                      />
+                    </div>
                     <div className="sprite-grid clipboard-sprite-grid">
                       <button
                         type="button"
@@ -2391,9 +2429,7 @@ export function LcdStudio() {
             ? textPreviewBitmap
             : geometryPreview
               ? geometryPreview.rows
-            : selectedSpriteId === CLIPBOARD_SPRITE_ID
-              ? clipboardBitmap ?? ['0']
-              : SPRITE_BITMAPS.find((sprite) => sprite.id === selectedSpriteId)?.rows ?? SPRITE_BITMAPS[0].rows}
+              : stampBitmap}
           selection={mode === 'edit' && editTool === 'select' ? selection : null}
           onPixelChange={setPixel}
           onStamp={stampAt}
