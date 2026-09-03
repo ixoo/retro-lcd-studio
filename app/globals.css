@@ -276,8 +276,7 @@
 
 .guide-gap {
   bottom: 0.35rem;
-  left: 50%;
-  transform: translateX(-50%);
+  right: 0.35rem;
 }
 
 .geometry-controls {
