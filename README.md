@@ -4,6 +4,8 @@ A small WebGPU playground for rendering crisp monochrome bitmaps like a classic 
 
 Shape the pixels in physical millimetres, tune their spacing and shadow, try a few display palettes, tilt the infinite screen, or switch to Edit mode and draw directly on it.
 
+**[Open Retro LCD Render →](https://ixoo.github.io/retro-lcd-render/)**
+
 ## Run it locally
 
 You’ll need Node.js 22.13 or newer and a browser with WebGPU support.
