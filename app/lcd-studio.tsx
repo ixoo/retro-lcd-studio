@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Download,
+  FolderOpen,
   MousePointer2,
   Pencil,
   Redo2,
@@ -20,6 +21,12 @@ import {
   type LcdTexture,
 } from '@/app/lcd-canvas';
 import { Button } from '@/components/ui/button';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTitle,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
@@ -47,6 +54,11 @@ const INITIAL_BITMAP_OFFSET: [number, number] = [
 ];
 
 const DEMO_BITMAPS = [
+  {
+    id: 'empty',
+    label: 'Empty',
+    rows: ['0'],
+  },
   {
     id: 'lcd',
     label: 'LCD',
@@ -658,6 +670,45 @@ function ColorControl({
   );
 }
 
+function BitmapThumbnail({
+  rows,
+  background,
+  pixel,
+  inverted,
+}: {
+  rows: string[];
+  background: string;
+  pixel: string;
+  inverted: boolean;
+}) {
+  const columns = rows[0].length;
+  const cellSize = Math.min(52 / columns, 32 / rows.length);
+  const pixelSize = Math.max(cellSize * 0.76, 1);
+  const contentWidth = columns * cellSize;
+  const contentHeight = rows.length * cellSize;
+  const originX = (64 - contentWidth) / 2;
+  const originY = (44 - contentHeight) / 2;
+
+  return (
+    <svg viewBox="0 0 64 44" aria-hidden="true">
+      <rect width="64" height="44" rx="4" fill={background} />
+      {rows.flatMap((row, rowIndex) => row.split('').map((value, columnIndex) => (
+        (inverted ? value === '0' : value === '1') ? (
+          <rect
+            key={`${rowIndex}-${columnIndex}`}
+            x={originX + columnIndex * cellSize + (cellSize - pixelSize) / 2}
+            y={originY + rowIndex * cellSize + (cellSize - pixelSize) / 2}
+            width={pixelSize}
+            height={pixelSize}
+            rx={Math.min(pixelSize * 0.08, 0.5)}
+            fill={pixel}
+          />
+        ) : null
+      )))}
+    </svg>
+  );
+}
+
 export function LcdStudio() {
   const canvasRef = useRef<LcdCanvasHandle>(null);
   const bitmapRef = useRef(INITIAL_BITMAP);
@@ -671,6 +722,7 @@ export function LcdStudio() {
   const [past, setPast] = useState<BitmapFrame[]>([]);
   const [future, setFuture] = useState<BitmapFrame[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [bitmapPickerOpen, setBitmapPickerOpen] = useState(false);
   const [actionStatus, setActionStatus] = useState('Ready');
 
   const replaceBitmap = useCallback((next: string[], recordHistory = true, nextOffsetCells = bitmapOffsetRef.current) => {
@@ -896,7 +948,8 @@ export function LcdStudio() {
     if (!demo) return;
     replaceBitmap(demo.rows, true, centeredBitmapOffset(demo.rows));
     canvasRef.current?.resetView();
-    setActionStatus(`Demo loaded: ${demo.label}`);
+    setBitmapPickerOpen(false);
+    setActionStatus(`Bitmap loaded: ${demo.label}`);
   };
 
   const activeColorPreset = LCD_COLOR_PRESETS.find(
@@ -923,7 +976,7 @@ export function LcdStudio() {
   const setSurfaceTexture = (texture: LcdTexture) => {
     setAppearance((current) => ({ ...current, texture }));
     const preset = LCD_TEXTURE_PRESETS.find((item) => item.id === texture);
-    setActionStatus(`Surface texture: ${preset?.label ?? texture}`);
+    setActionStatus(`Texture: ${preset?.label ?? texture}`);
   };
 
   return (
@@ -932,75 +985,78 @@ export function LcdStudio() {
         id="controls-panel"
         className="controls-panel"
       >
-          <h1 className="sr-only">Retro LCD studio</h1>
-          <header className="panel-toolbar" aria-label="View and editing controls">
-            <fieldset className="mode-switch" aria-label="Interaction mode">
-              <Button
-                type="button"
-                size="sm"
-                variant={mode === 'view' ? 'default' : 'ghost'}
-                aria-pressed={mode === 'view'}
-                onClick={() => setMode('view')}
-              >
-                <Rotate3D data-icon="inline-start" />
-                <span className="button-label">View</span>
+        <h1 className="sr-only">Retro LCD studio</h1>
+        <div className="panel-section appearance-section">
+          <section className="control-group controls-group" aria-labelledby="controls-heading">
+            <h2 id="controls-heading">Controls</h2>
+            <header className="panel-toolbar" aria-label="View and editing controls">
+              <fieldset className="mode-switch" aria-label="Interaction mode">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={mode === 'view' ? 'default' : 'ghost'}
+                  aria-pressed={mode === 'view'}
+                  onClick={() => setMode('view')}
+                >
+                  <Rotate3D data-icon="inline-start" />
+                  <span className="button-label">View</span>
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={mode === 'edit' ? 'default' : 'ghost'}
+                  aria-pressed={mode === 'edit'}
+                  onClick={() => setMode('edit')}
+                >
+                  <Pencil data-icon="inline-start" />
+                  <span className="button-label">Edit</span>
+                </Button>
+              </fieldset>
+
+              <span className="bar-divider" aria-hidden="true" />
+              <Popover open={bitmapPickerOpen} onOpenChange={setBitmapPickerOpen}>
+                <PopoverTrigger
+                  render={(
+                    <Button type="button" size="icon-sm" variant="ghost" aria-label="Open bitmap" title="Open bitmap" />
+                  )}
+                >
+                  <FolderOpen />
+                </PopoverTrigger>
+                <PopoverContent className="bitmap-picker" align="start" sideOffset={8}>
+                  <PopoverTitle className="bitmap-picker-title">Open bitmap</PopoverTitle>
+                  <div className="bitmap-picker-grid">
+                    {DEMO_BITMAPS.map((demo) => (
+                      <button
+                        type="button"
+                        className="bitmap-choice"
+                        key={demo.id}
+                        aria-pressed={activeBitmapDemo?.id === demo.id}
+                        onClick={() => applyBitmapDemo(demo.id)}
+                      >
+                        <BitmapThumbnail rows={demo.rows} background={appearance.background} pixel={appearance.pixel} inverted={appearance.inverted} />
+                        <span>{demo.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              <Button type="button" size="icon-sm" variant="ghost" aria-label="Undo" title="Undo" disabled={past.length === 0} onClick={undo}>
+                <Undo2 />
               </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={mode === 'edit' ? 'default' : 'ghost'}
-                aria-pressed={mode === 'edit'}
-                onClick={() => setMode('edit')}
-              >
-                <Pencil data-icon="inline-start" />
-                <span className="button-label">Edit</span>
+              <Button type="button" size="icon-sm" variant="ghost" aria-label="Redo" title="Redo" disabled={future.length === 0} onClick={redo}>
+                <Redo2 />
               </Button>
-            </fieldset>
+              <Button type="button" size="icon-sm" variant="ghost" aria-label="Reset view" title="Reset view" onClick={() => canvasRef.current?.resetView()}>
+                <RotateCcw />
+              </Button>
+              <Button type="button" size="icon-sm" variant="ghost" aria-label="Export PNG" title="Export PNG" disabled={exporting} onClick={() => void exportPng()}>
+                <Download />
+              </Button>
+            </header>
+          </section>
 
-            <span className="bar-divider" aria-hidden="true" />
-            <Button type="button" size="icon-sm" variant="ghost" aria-label="Undo" title="Undo" disabled={past.length === 0} onClick={undo}>
-              <Undo2 />
-            </Button>
-            <Button type="button" size="icon-sm" variant="ghost" aria-label="Redo" title="Redo" disabled={future.length === 0} onClick={redo}>
-              <Redo2 />
-            </Button>
-            <Button type="button" size="icon-sm" variant="ghost" aria-label="Reset view" title="Reset view" onClick={() => canvasRef.current?.resetView()}>
-              <RotateCcw />
-            </Button>
-            <Button type="button" size="icon-sm" variant="ghost" aria-label="Export PNG" title="Export PNG" disabled={exporting} onClick={() => void exportPng()}>
-              <Download />
-            </Button>
-          </header>
-
-          <div className="panel-section appearance-section">
-            <section className="control-group" aria-labelledby="bitmap-heading">
-              <h2 id="bitmap-heading">Bitmap</h2>
-              <Select value={activeBitmapDemo?.id ?? ''} onValueChange={applyBitmapDemo}>
-                <SelectTrigger className="demo-select" aria-label="Demo bitmap">
-                  <SelectValue placeholder="Load demo…" />
-                </SelectTrigger>
-                <SelectContent align="start">
-                  {DEMO_BITMAPS.map((demo) => (
-                    <SelectItem key={demo.id} value={demo.id}>
-                      {demo.label} · {demo.rows[0].length}×{demo.rows.length}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </section>
-
-            <section className="control-group geometry-group" aria-labelledby="geometry-heading">
-              <h2 id="geometry-heading">Pixel geometry</h2>
-              <GeometryGuide appearance={appearance} />
-              <div className="geometry-controls">
-                <ControlSlider id="pixel-width" label="Width" value={appearance.pixelWidthMm} formattedValue={formatMillimetres(appearance.pixelWidthMm)} min={0.25} max={5} step={0.05} onChange={(pixelWidthMm) => setAppearance((current) => ({ ...current, pixelWidthMm }))} />
-                <ControlSlider id="pixel-height" label="Height" value={appearance.pixelHeightMm} formattedValue={formatMillimetres(appearance.pixelHeightMm)} min={0.25} max={5} step={0.05} onChange={(pixelHeightMm) => setAppearance((current) => ({ ...current, pixelHeightMm }))} />
-                <ControlSlider id="pixel-gap" label="Gap" value={appearance.gapMm} formattedValue={formatMillimetres(appearance.gapMm)} min={0} max={1} step={0.01} onChange={(gapMm) => setAppearance((current) => ({ ...current, gapMm }))} />
-              </div>
-            </section>
-
-            <section className="control-group" aria-labelledby="surface-heading">
-              <h2 id="surface-heading">Surface</h2>
+          <section className="control-group" aria-labelledby="style-heading">
+              <h2 id="style-heading">Style</h2>
               <div className="preset-block">
                 <RadioGroup
                   className="preset-grid"
@@ -1032,13 +1088,13 @@ export function LcdStudio() {
 
               <div className="color-controls">
                 <ColorControl label="Pixel" value={appearance.pixel} onChange={(pixel) => setAppearance((current) => ({ ...current, pixel }))} />
-                <ColorControl label="Surface" value={appearance.background} onChange={(background) => setAppearance((current) => ({ ...current, background }))} />
+                <ColorControl label="Background" value={appearance.background} onChange={(background) => setAppearance((current) => ({ ...current, background }))} />
               </div>
 
               <div className="select-control">
-                <span id="surface-texture-label">Texture</span>
+                <span id="style-texture-label">Texture</span>
                 <Select value={appearance.texture} onValueChange={(value) => setSurfaceTexture(value as LcdTexture)}>
-                  <SelectTrigger className="texture-select" aria-labelledby="surface-texture-label">
+                  <SelectTrigger className="texture-select" aria-labelledby="style-texture-label">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent align="start">
@@ -1057,6 +1113,16 @@ export function LcdStudio() {
                   aria-label="Invert pixels"
                   onCheckedChange={setInvertedRendering}
                 />
+              </div>
+            </section>
+
+            <section className="control-group geometry-group" aria-labelledby="geometry-heading">
+              <h2 id="geometry-heading">Pixel geometry</h2>
+              <GeometryGuide appearance={appearance} />
+              <div className="geometry-controls">
+                <ControlSlider id="pixel-width" label="Width" value={appearance.pixelWidthMm} formattedValue={formatMillimetres(appearance.pixelWidthMm)} min={0.25} max={5} step={0.05} onChange={(pixelWidthMm) => setAppearance((current) => ({ ...current, pixelWidthMm }))} />
+                <ControlSlider id="pixel-height" label="Height" value={appearance.pixelHeightMm} formattedValue={formatMillimetres(appearance.pixelHeightMm)} min={0.25} max={5} step={0.05} onChange={(pixelHeightMm) => setAppearance((current) => ({ ...current, pixelHeightMm }))} />
+                <ControlSlider id="pixel-gap" label="Gap" value={appearance.gapMm} formattedValue={formatMillimetres(appearance.gapMm)} min={0} max={1} step={0.01} onChange={(gapMm) => setAppearance((current) => ({ ...current, gapMm }))} />
               </div>
             </section>
 
