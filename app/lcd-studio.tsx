@@ -530,14 +530,39 @@ function ShadowGuide({ appearance }: { appearance: LcdAppearance }) {
   const softnessIsVertical = softnessEdge === 'top' || softnessEdge === 'bottom';
   const softnessEdgeX = softnessEdge === 'left' ? shadowX : shadowRight;
   const softnessEdgeY = softnessEdge === 'top' ? shadowY : shadowBottom;
-  const softnessTarget = softnessIsVertical
-    ? { x: softnessMeasureX, y: softnessEdgeY }
-    : { x: softnessEdgeX, y: softnessMeasureY };
-  const softnessBracket = softnessIsVertical
-    ? `M ${softnessMeasureX - 4} ${softnessEdgeY - softnessExtent} H ${softnessMeasureX} V ${softnessEdgeY + softnessExtent} H ${softnessMeasureX - 4}`
-    : `M ${softnessEdgeX - softnessExtent} ${softnessMeasureY - 4} V ${softnessMeasureY} H ${softnessEdgeX + softnessExtent} V ${softnessMeasureY - 4}`;
+  const softnessMeasurement = (() => {
+    const clearance = 10;
+
+    if (softnessIsVertical) {
+      const top = softnessEdgeY - softnessExtent;
+      const bottom = softnessEdgeY + softnessExtent;
+      const left = Math.min(pixelX, shadowX - softnessExtent) - clearance;
+      const right = Math.max(pixelRight, shadowRight + softnessExtent) + clearance;
+      const bracketX = left >= SHADOW_GUIDE_WIDTH - right ? left : right;
+      const tick = bracketX === left ? 4 : -4;
+
+      return {
+        bracket: `M ${bracketX + tick} ${top} H ${bracketX} V ${bottom} H ${bracketX + tick}`,
+        extensions: `M ${softnessMeasureX} ${top} H ${bracketX} M ${softnessMeasureX} ${bottom} H ${bracketX}`,
+        target: { x: bracketX, y: softnessEdgeY },
+      };
+    }
+
+    const left = softnessEdgeX - softnessExtent;
+    const right = softnessEdgeX + softnessExtent;
+    const top = Math.min(pixelY, shadowY - softnessExtent) - clearance;
+    const bottom = Math.max(pixelBottom, shadowBottom + softnessExtent) + clearance;
+    const bracketY = top >= SHADOW_GUIDE_HEIGHT - bottom ? top : bottom;
+    const tick = bracketY === top ? 4 : -4;
+
+    return {
+      bracket: `M ${left} ${bracketY + tick} V ${bracketY} H ${right} V ${bracketY + tick}`,
+      extensions: `M ${left} ${softnessMeasureY} V ${bracketY} M ${right} ${softnessMeasureY} V ${bracketY}`,
+      target: { x: softnessEdgeX, y: bracketY },
+    };
+  })();
   const legendTargets: Record<ShadowLegendId, GuidePoint> = {
-    softness: softnessTarget,
+    softness: softnessMeasurement.target,
     x: { x: (pixelRight + shadowRight) / 2, y: xMeasureY },
     y: { x: yMeasureX, y: (pixelBottom + shadowBottom) / 2 },
   };
@@ -589,7 +614,8 @@ function ShadowGuide({ appearance }: { appearance: LcdAppearance }) {
           <path d={`M ${yMeasureX - 4} ${pixelBottom} H ${yMeasureX} V ${shadowBottom} H ${yMeasureX - 4}`} />
           <path d={connectorPath(legendTargets.y, legendLayout.y)} />
 
-          <path d={softnessBracket} />
+          <path className="guide-shadow-extension" d={softnessMeasurement.extensions} />
+          <path d={softnessMeasurement.bracket} />
           <path d={connectorPath(legendTargets.softness, legendLayout.softness)} />
         </g>
       </svg>

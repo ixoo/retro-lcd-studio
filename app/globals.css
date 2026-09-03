@@ -234,6 +234,11 @@
   stroke-width: 1.3;
 }
 
+.guide-shadow-extension {
+  stroke-opacity: 0.34;
+  stroke-width: 0.9;
+}
+
 .guide-callout {
   position: absolute;
   z-index: 1;
