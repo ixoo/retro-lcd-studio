@@ -846,23 +846,32 @@ function ColorControl({
   );
 }
 
-function rasterizePixelText(text: string, fontId: PixelFontId, pixelSize: number) {
-  if (!text || typeof document === 'undefined') return ['0'];
+function rasterizePixelTextLayout(text: string, fontId: PixelFontId, pixelSize: number) {
+  const emptyLayout = { rows: ['0'], cursorOffset: { row: 0, column: 0 } };
+  if (!text || typeof document === 'undefined') return emptyLayout;
   const font = PIXEL_FONTS.find((item) => item.id === fontId) ?? PIXEL_FONTS[0];
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) return ['0'];
+  if (!context) return emptyLayout;
 
+  const lines = text.split('\n');
+  const lineAdvance = Math.max(1, Math.ceil(pixelSize * 1.25));
   context.font = `${font.weight} ${pixelSize}px ${font.css}`;
-  const width = Math.min(MAX_BITMAP_DIMENSION, Math.max(1, Math.ceil(context.measureText(text).width) + 2));
-  const height = Math.min(MAX_BITMAP_DIMENSION, Math.max(1, Math.ceil(pixelSize * 1.45) + 2));
+  const lineWidths = lines.map((line) => Math.ceil(context.measureText(line).width));
+  const width = Math.min(MAX_BITMAP_DIMENSION, Math.max(1, ...lineWidths.map((lineWidth) => lineWidth + 2)));
+  const height = Math.min(
+    MAX_BITMAP_DIMENSION,
+    Math.max(1, (lines.length - 1) * lineAdvance + Math.ceil(pixelSize * 1.45) + 2),
+  );
   canvas.width = width;
   canvas.height = height;
   context.clearRect(0, 0, width, height);
   context.font = `${font.weight} ${pixelSize}px ${font.css}`;
   context.textBaseline = 'alphabetic';
   context.fillStyle = '#000';
-  context.fillText(text, 1, Math.ceil(pixelSize * 1.08));
+  lines.forEach((line, lineIndex) => {
+    context.fillText(line, 1, Math.ceil(pixelSize * 1.08) + lineIndex * lineAdvance);
+  });
 
   const pixels = context.getImageData(0, 0, width, height).data;
   let top = height;
@@ -875,13 +884,25 @@ function rasterizePixelText(text: string, fontId: PixelFontId, pixelSize: number
       }
     }
   }
-  if (bottom < top) return ['0'.repeat(width)];
+  const lastLine = lines.at(-1) ?? '';
+  const cursorOffset = {
+    row: (lines.length - 1) * lineAdvance,
+    column: lastLine ? Math.min(MAX_BITMAP_DIMENSION - 1, (lineWidths.at(-1) ?? 0) + 2) : 0,
+  };
+  if (bottom < top) return { rows: ['0'.repeat(width)], cursorOffset };
 
-  return Array.from({ length: bottom - top + 1 }, (_, row) => (
-    Array.from({ length: width }, (_, column) => (
-      pixels[((top + row) * width + column) * 4 + 3] >= 96 ? '1' : '0'
-    )).join('')
-  ));
+  return {
+    rows: Array.from({ length: bottom - top + 1 }, (_, row) => (
+      Array.from({ length: width }, (_, column) => (
+        pixels[((top + row) * width + column) * 4 + 3] >= 96 ? '1' : '0'
+      )).join('')
+    )),
+    cursorOffset,
+  };
+}
+
+function rasterizePixelText(text: string, fontId: PixelFontId, pixelSize: number) {
+  return rasterizePixelTextLayout(text, fontId, pixelSize).rows;
 }
 
 function loadPixelFont(fontId: PixelFontId, pixelSize = 16) {
@@ -991,7 +1012,7 @@ function PixelFontThumbnail({
 export function LcdStudio() {
   const canvasRef = useRef<LcdCanvasHandle>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const textInputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLTextAreaElement>(null);
   const bitmapRef = useRef(INITIAL_BITMAP);
   const bitmapOffsetRef = useRef<[number, number]>(INITIAL_BITMAP_OFFSET);
   const paintBaseRef = useRef<BitmapFrame | null>(null);
@@ -1005,6 +1026,7 @@ export function LcdStudio() {
   const [textValue, setTextValue] = useState('');
   const [textPreviewBitmap, setTextPreviewBitmap] = useState(['0']);
   const [textAnchor, setTextAnchor] = useState<{ row: number; column: number } | null>(null);
+  const [textCursorOffset, setTextCursorOffset] = useState({ row: 0, column: 0 });
   const [textCursorSize, setTextCursorSize] = useState<[number, number]>([8, 9]);
   const [selection, setSelection] = useState<LcdSelection | null>(null);
   const [clipboardBitmap, setClipboardBitmap] = useState<string[] | null>(null);
@@ -1030,6 +1052,7 @@ export function LcdStudio() {
     setTextAnchor(null);
     setTextValue('');
     setTextPreviewBitmap(['0']);
+    setTextCursorOffset({ row: 0, column: 0 });
     textInputRef.current?.blur();
   }, []);
 
@@ -1175,8 +1198,13 @@ export function LcdStudio() {
     fontId = selectedFontId,
     pixelSize = textPixelSize,
   ) => {
-    setTextPreviewBitmap(value ? rasterizePixelText(value, fontId, pixelSize) : ['0']);
-    setActionStatus(value ? `${value.length} character${value.length === 1 ? '' : 's'} ready · Enter to stamp` : 'Type text');
+    const layout = rasterizePixelTextLayout(value, fontId, pixelSize);
+    setTextPreviewBitmap(layout.rows);
+    setTextCursorOffset(layout.cursorOffset);
+    const lineCount = value.split('\n').length;
+    setActionStatus(value
+      ? `${lineCount} line${lineCount === 1 ? '' : 's'} ready · Shift+Enter new line · Enter stamp`
+      : 'Type text');
   };
 
   const beginTextAt = (row: number, column: number) => {
@@ -1188,6 +1216,7 @@ export function LcdStudio() {
     setTextAnchor({ row, column });
     setTextValue('');
     setTextPreviewBitmap(['0']);
+    setTextCursorOffset({ row: 0, column: 0 });
     setSelection(null);
     setActionStatus('Type text');
     textInputRef.current?.focus({ preventScroll: true });
@@ -1598,10 +1627,9 @@ export function LcdStudio() {
                         </Button>
                       ))}
                     </fieldset>
-                    <input
+                    <textarea
                       ref={textInputRef}
                       className="pixel-text-capture"
-                      type="text"
                       value={textValue}
                       maxLength={120}
                       disabled={!textAnchor}
@@ -1612,6 +1640,7 @@ export function LcdStudio() {
                       onChange={(event) => updateText(event.target.value)}
                       onKeyDown={(event) => {
                         if (event.key !== 'Enter') return;
+                        if (event.shiftKey) return;
                         event.preventDefault();
                         commitText();
                       }}
@@ -1762,8 +1791,8 @@ export function LcdStudio() {
           textAnchor={textAnchor}
           textCursorAnchor={textAnchor
             ? {
-                row: textAnchor.row,
-                column: textAnchor.column + (textValue ? textPreviewBitmap[0]?.length ?? 0 : 0),
+                row: textAnchor.row + textCursorOffset.row,
+                column: textAnchor.column + textCursorOffset.column,
               }
             : null}
           stampBitmap={editTool === 'text'
@@ -1797,7 +1826,7 @@ export function LcdStudio() {
             </>
           ) : editTool === 'text' ? (
             <>
-              <span className="mouse-gesture-hint"><strong>Click</strong> to type · <strong>Drag</strong> position · <strong>Enter</strong> stamp</span>
+              <span className="mouse-gesture-hint"><strong>Click</strong> to type · <strong>Shift+Enter</strong> line · <strong>Enter</strong> stamp</span>
               <span className="touch-gesture-hint"><strong>Tap</strong> to type · <strong>Drag</strong> position · <strong>Enter</strong> stamp</span>
             </>
           ) : editTool === 'stamp' ? (
