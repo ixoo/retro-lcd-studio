@@ -305,7 +305,7 @@ function GeometryGuide({ appearance }: { appearance: LcdAppearance }) {
   const originX = 152 - matrixWidth / 2;
   const originY = 40 + (142 - matrixHeight) / 2;
   const sampleColumn = 2;
-  const sampleRow = 3;
+  const sampleRow = rows - 1;
   const sampleX = originX + sampleColumn * pitchX;
   const sampleY = originY + sampleRow * pitchY;
   const widthSampleX = originX + 2 * pitchX;
@@ -389,7 +389,7 @@ function GeometryGuide({ appearance }: { appearance: LcdAppearance }) {
         </g>
         <g className="guide-gap-measurement" stroke={appearance.pixel} aria-hidden="true">
           <path d={`M ${gapStart} ${sampleY + pixelHeight + 3} V ${gapMeasureY} H ${gapEnd} V ${sampleY + pixelHeight + 3}`} />
-          <path d={`M ${gapCenter} ${gapMeasureY} V 178 H 258`} />
+          <path d={`M ${gapCenter} ${gapMeasureY} H 220 V 178 H 258`} />
         </g>
       </svg>
 
