@@ -8,12 +8,10 @@ import {
   ImagePlus,
   MousePointer2,
   Pencil,
-  ClipboardPaste,
   Redo2,
   Rotate3D,
   RotateCcw,
   Settings2,
-  Scissors,
   Stamp,
   Undo2,
 } from 'lucide-react';
@@ -146,7 +144,9 @@ const SPRITE_BITMAPS = [
   },
 ];
 
-type EditTool = 'pen' | 'stamp' | 'select' | 'paste';
+const CLIPBOARD_SPRITE_ID = 'clipboard';
+
+type EditTool = 'pen' | 'stamp' | 'select';
 
 const DEFAULT_APPEARANCE: LcdAppearance = {
   background: '#aeb5a7',
@@ -855,7 +855,7 @@ export function LcdStudio() {
 
   const [mode, setMode] = useState<LcdMode>('view');
   const [editTool, setEditTool] = useState<EditTool>('pen');
-  const [selectedSpriteId, setSelectedSpriteId] = useState('smile');
+  const [selectedSpriteId, setSelectedSpriteId] = useState(CLIPBOARD_SPRITE_ID);
   const [selection, setSelection] = useState<LcdSelection | null>(null);
   const [clipboardBitmap, setClipboardBitmap] = useState<string[] | null>(null);
   const [bitmap, setBitmap] = useState(INITIAL_BITMAP);
@@ -967,12 +967,12 @@ export function LcdStudio() {
   };
 
   const stampAt = (row: number, column: number) => {
+    if (selectedSpriteId === CLIPBOARD_SPRITE_ID) {
+      if (clipboardBitmap) placeBitmapAt(clipboardBitmap, 'Selection', row, column);
+      return;
+    }
     const sprite = SPRITE_BITMAPS.find((item) => item.id === selectedSpriteId);
     if (sprite) placeBitmapAt(sprite.rows, sprite.label, row, column);
-  };
-
-  const pasteAt = (row: number, column: number) => {
-    if (clipboardBitmap) placeBitmapAt(clipboardBitmap, 'Selection', row, column);
   };
 
   const bitmapFromSelection = useCallback((selectedArea: LcdSelection) => (
@@ -989,43 +989,9 @@ export function LcdStudio() {
       return;
     }
     setClipboardBitmap(bitmapFromSelection(selectedArea));
+    setSelectedSpriteId(CLIPBOARD_SPRITE_ID);
     setActionStatus(`Copied ${selectedArea.width} × ${selectedArea.height} cells`);
   }, [bitmapFromSelection]);
-
-  const cutSelection = useCallback(() => {
-    if (!selection) return;
-    if (selection.width > MAX_BITMAP_DIMENSION || selection.height > MAX_BITMAP_DIMENSION) {
-      setActionStatus(`Selection exceeds the ${MAX_BITMAP_DIMENSION} × ${MAX_BITMAP_DIMENSION} technical limit`);
-      return;
-    }
-
-    const current = bitmapRef.current;
-    const clipboard = bitmapFromSelection(selection);
-    const next = current.map((row) => row.split(''));
-    for (let rowOffset = 0; rowOffset < selection.height; rowOffset += 1) {
-      const targetRow = selection.row + rowOffset;
-      if (targetRow < 0 || targetRow >= next.length) continue;
-      for (let columnOffset = 0; columnOffset < selection.width; columnOffset += 1) {
-        const targetColumn = selection.column + columnOffset;
-        if (targetColumn >= 0 && targetColumn < next[targetRow].length) {
-          next[targetRow][targetColumn] = '0';
-        }
-      }
-    }
-
-    setClipboardBitmap(clipboard);
-    replaceBitmap(next.map((row) => row.join('')), true);
-    setSelection(null);
-    setEditTool('paste');
-    setActionStatus(`Cut ${selection.width} × ${selection.height} cells`);
-  }, [bitmapFromSelection, replaceBitmap, selection]);
-
-  const beginPaste = useCallback(() => {
-    if (!clipboardBitmap) return;
-    setSelection(null);
-    setEditTool('paste');
-    setActionStatus('Paste ready');
-  }, [clipboardBitmap]);
 
   const beginPaint = () => {
     paintBaseRef.current = {
@@ -1094,16 +1060,6 @@ export function LcdStudio() {
         if (event.shiftKey) redo(); else undo();
         return;
       }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'x') {
-        event.preventDefault();
-        cutSelection();
-        return;
-      }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
-        event.preventDefault();
-        beginPaste();
-        return;
-      }
       if (isTyping || event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key.toLowerCase() === 'v') setMode('view');
       if (event.key.toLowerCase() === 'e') setMode('edit');
@@ -1111,7 +1067,7 @@ export function LcdStudio() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [beginPaste, cutSelection, redo, undo]);
+  }, [redo, undo]);
 
   const loadBitmapAction = useCallback(async (source: string) => {
     const parsed = parseBitmap(source);
@@ -1355,20 +1311,27 @@ export function LcdStudio() {
                   </fieldset>
                 </div>
 
-                {(editTool === 'select' || editTool === 'paste') && (
-                  <div className="selection-actions" aria-label="Selection actions">
-                    <Button type="button" size="sm" variant="ghost" disabled={!selection} onClick={cutSelection}>
-                      <Scissors data-icon="inline-start" /> Cut
-                    </Button>
-                    <Button type="button" size="sm" variant={editTool === 'paste' ? 'default' : 'ghost'} disabled={!clipboardBitmap} onClick={beginPaste}>
-                      <ClipboardPaste data-icon="inline-start" /> Paste
-                    </Button>
-                  </div>
-                )}
-
                 {editTool === 'stamp' && (
                   <div className="sprite-library" aria-label="Sprite library">
                     <div className="sprite-grid">
+                      <button
+                        type="button"
+                        className="sprite-choice"
+                        aria-label={clipboardBitmap ? 'Copied selection' : 'Copied selection unavailable'}
+                        aria-pressed={selectedSpriteId === CLIPBOARD_SPRITE_ID}
+                        disabled={!clipboardBitmap}
+                        onClick={() => {
+                          setSelectedSpriteId(CLIPBOARD_SPRITE_ID);
+                          setActionStatus('Copied selection stamp selected');
+                        }}
+                      >
+                        <BitmapThumbnail
+                          rows={clipboardBitmap ?? ['0']}
+                          background={appearance.background}
+                          pixel={appearance.pixel}
+                          inverted={false}
+                        />
+                      </button>
                       {SPRITE_BITMAPS.map((sprite) => (
                         <button
                           type="button"
@@ -1487,13 +1450,12 @@ export function LcdStudio() {
           bitmapOffsetCells={bitmapOffsetCells}
           mode={mode}
           editTool={editTool}
-          stampBitmap={editTool === 'paste' && clipboardBitmap
-            ? clipboardBitmap
+          stampBitmap={selectedSpriteId === CLIPBOARD_SPRITE_ID
+            ? clipboardBitmap ?? ['0']
             : SPRITE_BITMAPS.find((sprite) => sprite.id === selectedSpriteId)?.rows ?? SPRITE_BITMAPS[0].rows}
           selection={mode === 'edit' && editTool === 'select' ? selection : null}
           onPixelChange={setPixel}
           onStamp={stampAt}
-          onPaste={pasteAt}
           onSelectionChange={setSelection}
           onSelectionEnd={copySelectionToBuffer}
           onPaintStart={beginPaint}
@@ -1517,11 +1479,6 @@ export function LcdStudio() {
             <>
               <span className="mouse-gesture-hint"><strong>Click</strong> stamp · <strong>Shift</strong> pan · <strong>Option</strong> rotate · <strong>Scroll</strong> zoom</span>
               <span className="touch-gesture-hint"><strong>Tap</strong> stamp · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
-            </>
-          ) : editTool === 'paste' ? (
-            <>
-              <span className="mouse-gesture-hint"><strong>Click</strong> paste · <strong>Shift</strong> pan · <strong>Scroll</strong> zoom</span>
-              <span className="touch-gesture-hint"><strong>Tap</strong> paste · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
             </>
           ) : (
             <>
