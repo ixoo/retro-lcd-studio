@@ -35,6 +35,7 @@ type LcdCanvasProps = {
   bitmapOffsetCells: [number, number];
   mode: LcdMode;
   editTool: 'pen' | 'stamp';
+  stampBitmap: string[];
   appearance: LcdAppearance;
   onPixelChange: (row: number, column: number, value: 0 | 1) => void;
   onStamp: (row: number, column: number) => void;
@@ -139,6 +140,7 @@ type GpuRuntime = {
   resize: () => void;
   draw: () => void;
   replaceBitmap: (bitmap: string[]) => void;
+  replaceStamp: (bitmap: string[]) => void;
   destroy: () => void;
 };
 
@@ -160,10 +162,12 @@ struct Uniforms {
   bitmapOffsetCells: vec2<f32>,
   background: vec4<f32>,
   pixelColor: vec4<f32>,
+  stampPreview: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var bitmapTexture: texture_2d<u32>;
+@group(0) @binding(2) var stampTexture: texture_2d<u32>;
 
 struct VertexOutput {
   @builtin(position) position: vec4<f32>,
@@ -221,6 +225,27 @@ fn activePixelDistance(local: vec2<f32>) -> f32 {
   return cellPixelDistance(grid);
 }
 
+fn stampPreviewDistance(local: vec2<f32>) -> f32 {
+  let grid = gridCoordinates(local);
+  let cell = floor(grid);
+  let origin = uniforms.stampPreview.xy;
+  let dimensions = uniforms.stampPreview.zw;
+  let stampCell = cell - origin;
+  let insideStamp = stampCell.x >= 0.0 && stampCell.y >= 0.0
+    && stampCell.x < dimensions.x && stampCell.y < dimensions.y;
+
+  if (!insideStamp) {
+    return 1000.0;
+  }
+
+  let stampValue = textureLoad(stampTexture, vec2<i32>(stampCell), 0).r;
+  if (stampValue != 1u) {
+    return 1000.0;
+  }
+
+  return cellPixelDistance(grid);
+}
+
 @fragment
 fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   let centeredScreen = vec2<f32>(
@@ -236,13 +261,16 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   let antialias = max(footprint * 0.72, 0.001);
   let pixelDistance = activePixelDistance(local);
   let shadowDistance = activePixelDistance(local - uniforms.shadowOffsetMm);
+  let stampDistance = stampPreviewDistance(local);
   let gridDistance = cellPixelDistance(gridCoordinates(local));
   let pixelCoverage = 1.0 - smoothstep(-antialias, antialias, pixelDistance);
+  let stampCoverage = 1.0 - smoothstep(-antialias, antialias, stampDistance);
   let shadowFeather = max(uniforms.geometryMm.w, antialias);
   let shadowCoverage = (1.0 - smoothstep(-shadowFeather, shadowFeather, shadowDistance))
     * uniforms.shadowOpacity;
 
   let appearanceFlags = u32(uniforms.background.a + 0.5);
+  let isInverted = (appearanceFlags & 1u) != 0u;
   let gridVisible = (appearanceFlags & 2u) != 0u;
   let minimumPixelSize = min(uniforms.geometryMm.x, uniforms.geometryMm.y);
   let gridFade = 1.0 - smoothstep(minimumPixelSize * 0.25, minimumPixelSize * 0.55, footprint);
@@ -252,6 +280,11 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   var color = mix(uniforms.background.rgb, uniforms.pixelColor.rgb, gridCoverage);
   color = mix(color, vec3<f32>(0.0), shadowCoverage);
   color = mix(color, uniforms.pixelColor.rgb, pixelCoverage * uniforms.pixelColor.a);
+  var stampTarget = uniforms.pixelColor.rgb;
+  if (isInverted) {
+    stampTarget = uniforms.background.rgb;
+  }
+  color = mix(color, stampTarget, stampCoverage * 0.42);
   return vec4<f32>(color, 1.0);
 }
 `;
@@ -311,6 +344,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       bitmapOffsetCells,
       mode,
       editTool,
+      stampBitmap,
       appearance,
       onPixelChange,
       onStamp,
@@ -322,6 +356,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const runtimeRef = useRef<GpuRuntime | null>(null);
     const bitmapRef = useRef(bitmap);
+    const stampBitmapRef = useRef(stampBitmap);
     const bitmapOffsetRef = useRef(bitmapOffsetCells);
     const appearanceRef = useRef(appearance);
     const onPixelChangeRef = useRef(onPixelChange);
@@ -330,6 +365,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const onPaintEndRef = useRef(onPaintEnd);
     const modeRef = useRef(mode);
     const editToolRef = useRef(editTool);
+    const stampPreviewCellRef = useRef<{ row: number; column: number } | null>(null);
     const frameRef = useRef<number | null>(null);
     const [rendererState, setRendererState] = useState<'loading' | 'ready' | 'unsupported' | 'error'>('loading');
     const cameraRef = useRef<Camera>({
@@ -472,14 +508,27 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           const pipelineError = await device.popErrorScope();
           if (pipelineError) throw new Error(pipelineError.message);
           const uniformBuffer = device.createBuffer({
-            size: 112,
+            size: 128,
             usage: 0x40 | 0x08,
           });
 
           let bitmapTexture: LocalGpuTexture | null = null;
+          let stampTexture: LocalGpuTexture | null = null;
           let bindGroup: LocalGpuBindGroup | null = null;
           let bitmapWidth = 1;
           let bitmapHeight = 1;
+
+          const rebuildBindGroup = () => {
+            if (!bitmapTexture || !stampTexture) return;
+            bindGroup = device.createBindGroup({
+              layout: pipeline.getBindGroupLayout(0),
+              entries: [
+                { binding: 0, resource: { buffer: uniformBuffer } },
+                { binding: 1, resource: bitmapTexture.createView() },
+                { binding: 2, resource: stampTexture.createView() },
+              ],
+            });
+          };
 
           const runtime: GpuRuntime = {
             device,
@@ -524,17 +573,38 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
                 { bytesPerRow, rowsPerImage: bitmapHeight },
                 { width: bitmapWidth, height: bitmapHeight, depthOrArrayLayers: 1 },
               );
-              bindGroup = device.createBindGroup({
-                layout: pipeline.getBindGroupLayout(0),
-                entries: [
-                  { binding: 0, resource: { buffer: uniformBuffer } },
-                  { binding: 1, resource: bitmapTexture.createView() },
-                ],
-              });
+              rebuildBindGroup();
               runtime.bitmapTexture = bitmapTexture;
               runtime.bindGroup = bindGroup;
               runtime.bitmapWidth = bitmapWidth;
               runtime.bitmapHeight = bitmapHeight;
+              scheduleDraw();
+            },
+            replaceStamp: (nextStamp) => {
+              const stampWidth = Math.max(nextStamp[0]?.length ?? 1, 1);
+              const stampHeight = Math.max(nextStamp.length, 1);
+              const bytesPerRow = Math.ceil(stampWidth / 256) * 256;
+              const data = new Uint8Array(bytesPerRow * stampHeight);
+              nextStamp.forEach((row, rowIndex) => {
+                for (let column = 0; column < stampWidth; column += 1) {
+                  data[rowIndex * bytesPerRow + column] = row[column] === '1' ? 1 : 0;
+                }
+              });
+
+              stampTexture?.destroy();
+              stampTexture = device.createTexture({
+                size: [stampWidth, stampHeight, 1],
+                format: 'r8uint',
+                usage: 0x04 | 0x02,
+              });
+              device.queue.writeTexture(
+                { texture: stampTexture },
+                data,
+                { bytesPerRow, rowsPerImage: stampHeight },
+                { width: stampWidth, height: stampHeight, depthOrArrayLayers: 1 },
+              );
+              rebuildBindGroup();
+              runtime.bindGroup = bindGroup;
               scheduleDraw();
             },
             draw: () => {
@@ -546,6 +616,17 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
               const pixelRatio = canvas!.width / Math.max(canvas!.getBoundingClientRect().width, 1);
               const background = hexToRgba(appearanceRef.current.background);
               const pixel = hexToRgba(appearanceRef.current.pixel);
+              const stampPreviewCell = stampPreviewCellRef.current;
+              const stampWidth = stampBitmapRef.current[0]?.length ?? 0;
+              const stampHeight = stampBitmapRef.current.length;
+              const stampPreview = stampPreviewCell
+                ? [
+                    stampPreviewCell.column - Math.floor(stampWidth / 2),
+                    stampPreviewCell.row - Math.floor(stampHeight / 2),
+                    stampWidth,
+                    stampHeight,
+                  ]
+                : [0, 0, 0, 0];
               background[3] = (appearanceRef.current.inverted ? 1 : 0)
                 + (appearanceRef.current.gridVisible ? 2 : 0);
               const values = new Float32Array([
@@ -556,6 +637,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
                 appearanceRef.current.shadowOffsetMm[0], appearanceRef.current.shadowOffsetMm[1], bitmapOffsetRef.current[0], bitmapOffsetRef.current[1],
                 ...background,
                 ...pixel,
+                ...stampPreview,
               ]);
               device.queue.writeBuffer(uniformBuffer, 0, values);
 
@@ -576,12 +658,14 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
             },
             destroy: () => {
               bitmapTexture?.destroy();
+              stampTexture?.destroy();
               uniformBuffer.destroy();
             },
           };
 
           runtimeRef.current = runtime;
           runtime.resize();
+          runtime.replaceStamp(stampBitmapRef.current);
           runtime.replaceBitmap(bitmapRef.current);
           setRendererState('ready');
         } catch (error) {
@@ -613,6 +697,12 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     }, [bitmap]);
 
     useEffect(() => {
+      stampBitmapRef.current = stampBitmap;
+      runtimeRef.current?.replaceStamp(stampBitmap);
+      scheduleDraw();
+    }, [stampBitmap]);
+
+    useEffect(() => {
       bitmapOffsetRef.current = bitmapOffsetCells;
       scheduleDraw();
     }, [bitmapOffsetCells]);
@@ -629,6 +719,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       onPaintEndRef.current = onPaintEnd;
       modeRef.current = mode;
       editToolRef.current = editTool;
+      if (mode !== 'edit' || editTool !== 'stamp') {
+        stampPreviewCellRef.current = null;
+        scheduleDraw();
+      }
     }, [editTool, mode, onPaintEnd, onPaintStart, onPixelChange, onStamp]);
 
     const cellAtPointer = (clientX: number, clientY: number) => {
@@ -667,6 +761,22 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       if (!cell) return;
       drag.lastCell = `${cell.row}:${cell.column}`;
       onStampRef.current(cell.row, cell.column);
+    };
+
+    const updateStampPreview = (clientX: number, clientY: number) => {
+      if (modeRef.current !== 'edit' || editToolRef.current !== 'stamp') return;
+      const cell = cellAtPointer(clientX, clientY);
+      if (!cell) return;
+      const previous = stampPreviewCellRef.current;
+      if (previous?.row === cell.row && previous.column === cell.column) return;
+      stampPreviewCellRef.current = cell;
+      scheduleDraw();
+    };
+
+    const clearStampPreview = () => {
+      if (!stampPreviewCellRef.current) return;
+      stampPreviewCellRef.current = null;
+      scheduleDraw();
     };
 
     const beginTouchGesture = () => {
@@ -749,6 +859,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     };
 
     const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+      if (event.pointerType !== 'touch') {
+        updateStampPreview(event.clientX, event.clientY);
+      }
+
       if (event.pointerType === 'touch' && touchPointersRef.current.has(event.pointerId)) {
         touchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
         const gesture = touchGestureRef.current;
@@ -883,6 +997,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           onPointerMove={handlePointerMove}
           onPointerUp={endPointer}
           onPointerCancel={endPointer}
+          onPointerLeave={clearStampPreview}
           onWheel={handleWheel}
           onContextMenu={(event) => event.preventDefault()}
         />

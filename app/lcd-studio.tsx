@@ -1384,6 +1384,7 @@ export function LcdStudio() {
           bitmapOffsetCells={bitmapOffsetCells}
           mode={mode}
           editTool={editTool}
+          stampBitmap={SPRITE_BITMAPS.find((sprite) => sprite.id === selectedSpriteId)?.rows ?? SPRITE_BITMAPS[0].rows}
           onPixelChange={setPixel}
           onStamp={stampAt}
           onPaintStart={beginPaint}
