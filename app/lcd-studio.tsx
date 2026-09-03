@@ -18,7 +18,6 @@ import {
   type LcdAppearance,
   type LcdCanvasHandle,
   type LcdMode,
-  type LcdTexture,
 } from '@/app/lcd-canvas';
 import { Button } from '@/components/ui/button';
 import {
@@ -28,13 +27,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 
@@ -113,7 +105,6 @@ const DEFAULT_APPEARANCE: LcdAppearance = {
   background: '#aeb5a7',
   pixel: '#111512',
   inverted: false,
-  texture: 'flat',
   pixelWidthMm: 1,
   pixelHeightMm: 1,
   gapMm: 0.18,
@@ -160,13 +151,6 @@ const LCD_COLOR_PRESETS = [
     pixel: '#102a35',
   },
 ] as const;
-
-const LCD_TEXTURE_PRESETS: Array<{ id: LcdTexture; label: string }> = [
-  { id: 'flat', label: 'Flat' },
-  { id: 'matte', label: 'Matte polarizer' },
-  { id: 'reflector', label: 'Diffuse reflector' },
-  { id: 'aged', label: 'Aged film' },
-];
 
 const GEOMETRY_GLYPH = [
   '01110',
@@ -975,12 +959,6 @@ export function LcdStudio() {
     setActionStatus(inverted ? 'Pixel states inverted' : 'Pixel states normal');
   };
 
-  const setSurfaceTexture = (texture: LcdTexture) => {
-    setAppearance((current) => ({ ...current, texture }));
-    const preset = LCD_TEXTURE_PRESETS.find((item) => item.id === texture);
-    setActionStatus(`Texture: ${preset?.label ?? texture}`);
-  };
-
   return (
     <main className="lcd-app" style={{ background: appearance.background }}>
       <aside
@@ -1091,20 +1069,6 @@ export function LcdStudio() {
               <div className="color-controls">
                 <ColorControl label="Pixel" value={appearance.pixel} onChange={(pixel) => setAppearance((current) => ({ ...current, pixel }))} />
                 <ColorControl label="Background" value={appearance.background} onChange={(background) => setAppearance((current) => ({ ...current, background }))} />
-              </div>
-
-              <div className="select-control">
-                <span id="style-texture-label">Texture</span>
-                <Select value={appearance.texture} onValueChange={(value) => setSurfaceTexture(value as LcdTexture)}>
-                  <SelectTrigger className="texture-select" aria-labelledby="style-texture-label">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent align="start">
-                    {LCD_TEXTURE_PRESETS.map((preset) => (
-                      <SelectItem key={preset.id} value={preset.id}>{preset.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
 
               <div className="toggle-control">
