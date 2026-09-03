@@ -232,10 +232,8 @@ type BitmapFrame = {
 };
 
 type TextSession = {
-  base: BitmapFrame;
   row: number;
   column: number;
-  historyRecorded: boolean;
 };
 
 type BrowserTool = {
@@ -972,6 +970,7 @@ export function LcdStudio() {
   const [selectedFontId, setSelectedFontId] = useState<PixelFontId>('terminal');
   const [textPixelSize, setTextPixelSize] = useState<(typeof TEXT_PIXEL_SIZES)[number]>(12);
   const [textValue, setTextValue] = useState('');
+  const [textPreviewBitmap, setTextPreviewBitmap] = useState(['0']);
   const [textAnchor, setTextAnchor] = useState<{ row: number; column: number } | null>(null);
   const [textCursorSize, setTextCursorSize] = useState<[number, number]>([8, 9]);
   const [selection, setSelection] = useState<LcdSelection | null>(null);
@@ -997,6 +996,8 @@ export function LcdStudio() {
     textSessionRef.current = null;
     setTextAnchor(null);
     setTextValue('');
+    setTextPreviewBitmap(['0']);
+    textInputRef.current?.blur();
   }, []);
 
   const chooseMode = useCallback((nextMode: LcdMode) => {
@@ -1136,34 +1137,24 @@ export function LcdStudio() {
     setActionStatus(`Copied ${selectedArea.width} × ${selectedArea.height} cells`);
   }, [bitmapFromSelection]);
 
-  const renderTextSession = (
+  const updateTextPreviewBitmap = (
     value: string,
     fontId = selectedFontId,
     pixelSize = textPixelSize,
   ) => {
-    const session = textSessionRef.current;
-    if (!session) return;
-    const next = value
-      ? overlayBitmapFrame(session.base, rasterizePixelText(value, fontId, pixelSize), session.row, session.column)
-      : session.base;
-    if (!next) {
-      setActionStatus(`Text exceeds the ${MAX_BITMAP_DIMENSION} × ${MAX_BITMAP_DIMENSION} technical limit`);
-      return;
-    }
-    if (!session.historyRecorded && !bitmapFramesMatch(session.base, next)) {
-      session.historyRecorded = true;
-      setPast((items) => [...items, session.base].slice(-80));
-      setFuture([]);
-    }
-    replaceBitmap(next.rows, false, next.offsetCells);
-    setActionStatus(value ? `${value.length} character${value.length === 1 ? '' : 's'} placed` : 'Type text');
+    setTextPreviewBitmap(value ? rasterizePixelText(value, fontId, pixelSize) : ['0']);
+    setActionStatus(value ? `${value.length} character${value.length === 1 ? '' : 's'} ready · Enter to stamp` : 'Type text');
   };
 
   const beginTextAt = (row: number, column: number) => {
-    const base = { rows: bitmapRef.current, offsetCells: bitmapOffsetRef.current };
-    textSessionRef.current = { base, row, column, historyRecorded: false };
+    if (textSessionRef.current) {
+      textInputRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    textSessionRef.current = { row, column };
     setTextAnchor({ row, column });
     setTextValue('');
+    setTextPreviewBitmap(['0']);
     setSelection(null);
     setActionStatus('Type text');
     textInputRef.current?.focus({ preventScroll: true });
@@ -1172,17 +1163,48 @@ export function LcdStudio() {
 
   const updateText = (value: string) => {
     setTextValue(value);
-    renderTextSession(value);
+    updateTextPreviewBitmap(value);
+  };
+
+  const moveTextTo = (row: number, column: number) => {
+    const session = textSessionRef.current;
+    if (!session) return;
+    session.row = row;
+    session.column = column;
+    setTextAnchor({ row, column });
+    setActionStatus(textValue ? 'Position text · Enter to stamp' : 'Type text');
+    textInputRef.current?.focus({ preventScroll: true });
+  };
+
+  const commitText = () => {
+    const session = textSessionRef.current;
+    if (!session) return;
+    if (!textValue) {
+      stopTextSession();
+      setActionStatus('Text insertion cancelled');
+      return;
+    }
+    const current = { rows: bitmapRef.current, offsetCells: bitmapOffsetRef.current };
+    const next = overlayBitmapFrame(current, textPreviewBitmap, session.row, session.column);
+    if (!next) {
+      setActionStatus(`Text exceeds the ${MAX_BITMAP_DIMENSION} × ${MAX_BITMAP_DIMENSION} technical limit`);
+      return;
+    }
+    replaceBitmap(next.rows, true, next.offsetCells);
+    stopTextSession();
+    setActionStatus('Text stamped');
   };
 
   const chooseTextFont = (fontId: PixelFontId) => {
     setSelectedFontId(fontId);
-    renderTextSession(textValue, fontId, textPixelSize);
+    updateTextPreviewBitmap(textValue, fontId, textPixelSize);
+    if (textSessionRef.current) requestAnimationFrame(() => textInputRef.current?.focus());
   };
 
   const chooseTextSize = (pixelSize: (typeof TEXT_PIXEL_SIZES)[number]) => {
     setTextPixelSize(pixelSize);
-    renderTextSession(textValue, selectedFontId, pixelSize);
+    updateTextPreviewBitmap(textValue, selectedFontId, pixelSize);
+    if (textSessionRef.current) requestAnimationFrame(() => textInputRef.current?.focus());
   };
 
   const beginPaint = () => {
@@ -1547,6 +1569,11 @@ export function LcdStudio() {
                       autoCorrect="off"
                       spellCheck={false}
                       onChange={(event) => updateText(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter') return;
+                        event.preventDefault();
+                        commitText();
+                      }}
                     />
                   </div>
                 )}
@@ -1690,14 +1717,18 @@ export function LcdStudio() {
           bitmapOffsetCells={bitmapOffsetCells}
           mode={mode}
           editTool={editTool}
-          textCursorSize={textValue ? [0, 0] : textCursorSize}
-          stampBitmap={selectedSpriteId === CLIPBOARD_SPRITE_ID
-            ? clipboardBitmap ?? ['0']
-            : SPRITE_BITMAPS.find((sprite) => sprite.id === selectedSpriteId)?.rows ?? SPRITE_BITMAPS[0].rows}
+          textCursorSize={textCursorSize}
+          textAnchor={textAnchor}
+          stampBitmap={editTool === 'text'
+            ? textPreviewBitmap
+            : selectedSpriteId === CLIPBOARD_SPRITE_ID
+              ? clipboardBitmap ?? ['0']
+              : SPRITE_BITMAPS.find((sprite) => sprite.id === selectedSpriteId)?.rows ?? SPRITE_BITMAPS[0].rows}
           selection={mode === 'edit' && editTool === 'select' ? selection : null}
           onPixelChange={setPixel}
           onStamp={stampAt}
           onTextStart={beginTextAt}
+          onTextMove={moveTextTo}
           onSelectionChange={setSelection}
           onSelectionEnd={copySelectionToBuffer}
           onPaintStart={beginPaint}
@@ -1719,8 +1750,8 @@ export function LcdStudio() {
             </>
           ) : editTool === 'text' ? (
             <>
-              <span className="mouse-gesture-hint"><strong>Click</strong> to type · <strong>Shift</strong> pan · <strong>Option</strong> rotate · <strong>Scroll</strong> zoom</span>
-              <span className="touch-gesture-hint"><strong>Tap</strong> to type · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
+              <span className="mouse-gesture-hint"><strong>Click</strong> to type · <strong>Drag</strong> position · <strong>Enter</strong> stamp</span>
+              <span className="touch-gesture-hint"><strong>Tap</strong> to type · <strong>Drag</strong> position · <strong>Enter</strong> stamp</span>
             </>
           ) : editTool === 'stamp' ? (
             <>

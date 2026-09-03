@@ -44,11 +44,13 @@ type LcdCanvasProps = {
   editTool: 'pen' | 'text' | 'stamp' | 'select';
   stampBitmap: string[];
   textCursorSize: [number, number];
+  textAnchor: { row: number; column: number } | null;
   selection: LcdSelection | null;
   appearance: LcdAppearance;
   onPixelChange: (row: number, column: number, value: 0 | 1) => void;
   onStamp: (row: number, column: number) => void;
   onTextStart: (row: number, column: number) => void;
+  onTextMove: (row: number, column: number) => void;
   onSelectionChange: (selection: LcdSelection) => void;
   onSelectionEnd: (selection: LcdSelection) => void;
   onPaintStart?: () => void;
@@ -362,8 +364,15 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   let insideTextCursor = textCursorSize.x > 0.0 && textCursorSize.y > 0.0
     && selectionGrid.x >= textCursorOrigin.x && selectionGrid.y >= textCursorOrigin.y
     && selectionGrid.x < textCursorEnd.x && selectionGrid.y < textCursorEnd.y;
+  let textCursorLocal = selectionGrid - textCursorOrigin;
+  let textCursorEdgeDistance = min(
+    min(textCursorLocal.x, textCursorSize.x - textCursorLocal.x),
+    min(textCursorLocal.y, textCursorSize.y - textCursorLocal.y)
+  );
+  let textCursorBorder = max(max(fwidth(selectionGrid.x), fwidth(selectionGrid.y)) * 1.35, 0.035);
+  let textCursorOutline = insideTextCursor && textCursorEdgeDistance <= textCursorBorder;
   let textCursorColor = mix(uniforms.background.rgb, uniforms.pixelColor.rgb, 0.72);
-  color = mix(color, textCursorColor, select(0.0, 0.32, insideTextCursor));
+  color = mix(color, textCursorColor, select(0.0, 0.78, textCursorOutline));
   return vec4<f32>(color, 1.0);
 }
 `;
@@ -425,11 +434,13 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       editTool,
       stampBitmap,
       textCursorSize,
+      textAnchor,
       selection,
       appearance,
       onPixelChange,
       onStamp,
       onTextStart,
+      onTextMove,
       onSelectionChange,
       onSelectionEnd,
       onPaintStart,
@@ -442,12 +453,14 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const bitmapRef = useRef(bitmap);
     const stampBitmapRef = useRef(stampBitmap);
     const textCursorSizeRef = useRef(textCursorSize);
+    const textAnchorRef = useRef(textAnchor);
     const selectionRef = useRef(selection);
     const bitmapOffsetRef = useRef(bitmapOffsetCells);
     const appearanceRef = useRef(appearance);
     const onPixelChangeRef = useRef(onPixelChange);
     const onStampRef = useRef(onStamp);
     const onTextStartRef = useRef(onTextStart);
+    const onTextMoveRef = useRef(onTextMove);
     const onSelectionChangeRef = useRef(onSelectionChange);
     const onSelectionEndRef = useRef(onSelectionEnd);
     const onPaintStartRef = useRef(onPaintStart);
@@ -470,12 +483,14 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     });
     const dragRef = useRef<null | {
       pointerId: number;
-      kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'text' | 'stamp' | 'select';
+      kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'text' | 'text-move' | 'stamp' | 'select';
       x: number;
       y: number;
       paintValue?: 0 | 1;
       lastCell?: string;
       selectionAnchor?: { row: number; column: number };
+      textDragCell?: { row: number; column: number };
+      textDragAnchor?: { row: number; column: number };
     }>(null);
     const touchPointersRef = useRef(new Map<number, { x: number; y: number }>());
     const touchGestureRef = useRef<null | {
@@ -709,9 +724,12 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
               const background = hexToRgba(appearanceRef.current.background);
               const pixel = hexToRgba(appearanceRef.current.pixel);
               const stampPreviewCell = stampPreviewCellRef.current;
+              const activeTextAnchor = editToolRef.current === 'text' ? textAnchorRef.current : null;
               const stampWidth = stampBitmapRef.current[0]?.length ?? 0;
               const stampHeight = stampBitmapRef.current.length;
-              const stampPreview = stampPreviewCell
+              const stampPreview = activeTextAnchor
+                ? [activeTextAnchor.column, activeTextAnchor.row, stampWidth, stampHeight]
+                : stampPreviewCell
                 ? [
                     stampPreviewCell.column - Math.floor(stampWidth / 2),
                     stampPreviewCell.row - Math.floor(stampHeight / 2),
@@ -723,7 +741,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
               const selectionValues = currentSelection
                 ? [currentSelection.column, currentSelection.row, currentSelection.width, currentSelection.height]
                 : [0, 0, 0, 0];
-              const textCursorCell = textCursorCellRef.current;
+              const textCursorCell = activeTextAnchor ?? textCursorCellRef.current;
               const textCursorValues = textCursorCell && textCursorVisibleRef.current
                 ? [textCursorCell.column, textCursorCell.row, ...textCursorSizeRef.current]
                 : [0, 0, 0, 0];
@@ -810,6 +828,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     }, [textCursorSize]);
 
     useEffect(() => {
+      textAnchorRef.current = textAnchor;
+      scheduleDraw();
+    }, [textAnchor]);
+
+    useEffect(() => {
       bitmapOffsetRef.current = bitmapOffsetCells;
       scheduleDraw();
     }, [bitmapOffsetCells]);
@@ -828,6 +851,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       onPixelChangeRef.current = onPixelChange;
       onStampRef.current = onStamp;
       onTextStartRef.current = onTextStart;
+      onTextMoveRef.current = onTextMove;
       onSelectionChangeRef.current = onSelectionChange;
       onSelectionEndRef.current = onSelectionEnd;
       onPaintStartRef.current = onPaintStart;
@@ -842,7 +866,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         textCursorCellRef.current = null;
         scheduleDraw();
       }
-    }, [editTool, mode, onPaintEnd, onPaintStart, onPixelChange, onSelectionChange, onSelectionEnd, onStamp, onTextStart]);
+    }, [editTool, mode, onPaintEnd, onPaintStart, onPixelChange, onSelectionChange, onSelectionEnd, onStamp, onTextMove, onTextStart]);
 
     useEffect(() => {
       if (mode !== 'edit' || editTool !== 'text') {
@@ -853,7 +877,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       const interval = window.setInterval(() => {
         textCursorVisibleRef.current = !textCursorVisibleRef.current;
         runtimeRef.current?.draw();
-      }, 520);
+      }, 780);
       return () => window.clearInterval(interval);
     }, [editTool, mode]);
 
@@ -918,7 +942,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     };
 
     const updateTextPreview = (clientX: number, clientY: number) => {
-      if (modeRef.current !== 'edit' || editToolRef.current !== 'text') return;
+      if (modeRef.current !== 'edit' || editToolRef.current !== 'text' || textAnchorRef.current) return;
       const cell = cellAtPointer(clientX, clientY);
       if (!cell) return;
       const previous = textCursorCellRef.current;
@@ -992,7 +1016,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
 
       const shouldPan = event.shiftKey || event.button === 1 || event.button === 2;
       const shouldRoll = event.altKey && !shouldPan;
-      let kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'text' | 'stamp' | 'select' = shouldPan
+      let kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'text' | 'text-move' | 'stamp' | 'select' = shouldPan
         ? 'pan'
         : shouldRoll
           ? 'roll'
@@ -1005,7 +1029,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         if (editToolRef.current === 'stamp') {
           kind = 'stamp';
         } else if (editToolRef.current === 'text') {
-          kind = 'text';
+          kind = textAnchorRef.current ? 'text-move' : 'text';
         } else if (editToolRef.current === 'select') {
           kind = 'select';
         } else {
@@ -1021,6 +1045,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         y: event.clientY,
         paintValue,
         selectionAnchor: kind === 'select' ? cellAtPointer(event.clientX, event.clientY) ?? undefined : undefined,
+        textDragCell: kind === 'text-move' ? cellAtPointer(event.clientX, event.clientY) ?? undefined : undefined,
+        textDragAnchor: kind === 'text-move' ? textAnchorRef.current ?? undefined : undefined,
       };
       if (kind === 'paint') {
         onPaintStartRef.current?.();
@@ -1104,6 +1130,18 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         scheduleDraw();
       } else if (drag.kind === 'paint') {
         paintAtPointer(event.clientX, event.clientY);
+      } else if (drag.kind === 'text-move' && drag.textDragCell && drag.textDragAnchor) {
+        const cell = cellAtPointer(event.clientX, event.clientY);
+        if (cell) {
+          const nextAnchor = {
+            row: drag.textDragAnchor.row + cell.row - drag.textDragCell.row,
+            column: drag.textDragAnchor.column + cell.column - drag.textDragCell.column,
+          };
+          textAnchorRef.current = nextAnchor;
+          textCursorCellRef.current = nextAnchor;
+          onTextMoveRef.current(nextAnchor.row, nextAnchor.column);
+          scheduleDraw();
+        }
       } else if (drag.kind === 'select' && drag.selectionAnchor) {
         const cell = cellAtPointer(event.clientX, event.clientY);
         if (cell) updateSelection(drag.selectionAnchor, cell);
