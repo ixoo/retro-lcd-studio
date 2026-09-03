@@ -313,11 +313,20 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
     stampTarget = uniforms.background.rgb;
   }
   color = mix(color, stampTarget, stampCoverage * 0.42);
-  var selectionColor = vec3<f32>(0.84, 1.0, 0.27);
-  if (selectedPixelValue == 1u) {
-    selectionColor = vec3<f32>(0.37, 0.47, 0.10);
+  let selectedPixelWasOn = select(
+    selectedPixelValue == 1u,
+    selectedPixelValue == 0u,
+    isInverted
+  );
+  var selectionColor = mix(
+    uniforms.background.rgb,
+    uniforms.pixelColor.rgb,
+    0.46
+  );
+  if (selectedPixelWasOn) {
+    selectionColor = uniforms.background.rgb;
   }
-  color = mix(color, selectionColor, selectionCoverage * 0.82);
+  color = mix(color, selectionColor, selectionCoverage * 0.92);
   return vec4<f32>(color, 1.0);
 }
 `;
