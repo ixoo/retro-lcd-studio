@@ -240,23 +240,6 @@ function formatMillimetres(value: number) {
   return `${value.toFixed(2)} mm`;
 }
 
-function contrastingMonochrome(hex: string) {
-  const normalized = hex.replace('#', '');
-  const expanded = normalized.length === 3
-    ? normalized.split('').map((character) => character + character).join('')
-    : normalized;
-  if (!/^[0-9a-f]{6}$/i.test(expanded)) return '#f7faf5';
-
-  const channels = [0, 2, 4].map((offset) => {
-    const channel = Number.parseInt(expanded.slice(offset, offset + 2), 16) / 255;
-    return channel <= 0.04045
-      ? channel / 12.92
-      : ((channel + 0.055) / 1.055) ** 2.4;
-  });
-  const luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
-  return luminance > 0.179 ? '#090c0a' : '#f7faf5';
-}
-
 function nextFrame() {
   return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 }
@@ -325,13 +308,15 @@ function GeometryGuide({ appearance }: { appearance: LcdAppearance }) {
   const sampleRow = 3;
   const sampleX = originX + sampleColumn * pitchX;
   const sampleY = originY + sampleRow * pitchY;
+  const widthSampleX = originX + 2 * pitchX;
+  const widthSampleY = originY;
+  const heightSampleX = originX;
+  const heightSampleY = originY + 3 * pitchY;
   const gapStart = sampleX + pixelWidth;
   const gapEnd = sampleX + pitchX;
   const gapCenter = (gapStart + gapEnd) / 2;
   const gapMeasureY = sampleY + pixelHeight + 10;
   const gapVisualWidth = Math.max(gapEnd - gapStart, 0.8);
-  const measurementColor = contrastingMonochrome(appearance.pixel);
-  const measurementHalo = measurementColor === '#090c0a' ? '#f7faf5' : '#090c0a';
   const shadowX = appearance.shadowOffsetMm[0] * scale;
   const shadowY = -appearance.shadowOffsetMm[1] * scale;
   const blur = Math.max(appearance.shadowSoftnessMm * scale, 0.05);
@@ -349,9 +334,6 @@ function GeometryGuide({ appearance }: { appearance: LcdAppearance }) {
         <defs>
           <filter id="geometry-guide-shadow" x="0" y="0" width="304" height="224" filterUnits="userSpaceOnUse">
             <feGaussianBlur stdDeviation={blur} />
-          </filter>
-          <filter id="geometry-guide-measurement-halo" x="0" y="0" width="304" height="224" filterUnits="userSpaceOnUse">
-            <feDropShadow dx="0" dy="0" stdDeviation="0.7" floodColor={measurementHalo} floodOpacity="0.9" />
           </filter>
         </defs>
         <rect className="guide-surface" x="0" y="0" width="304" height="224" rx="10" fill={appearance.background} />
@@ -409,14 +391,14 @@ function GeometryGuide({ appearance }: { appearance: LcdAppearance }) {
           aria-hidden="true"
         />
 
-        <g className="guide-dimension-measurement" stroke={measurementColor} filter="url(#geometry-guide-measurement-halo)" aria-hidden="true">
-          <path d={`M ${sampleX} ${sampleY - 7} V ${sampleY - 13} H ${sampleX + pixelWidth} V ${sampleY - 7}`} />
-          <path d={`M ${sampleX + pixelWidth / 2} ${sampleY - 13} V 24 H 233`} />
+        <g className="guide-dimension-measurement" stroke={appearance.pixel} aria-hidden="true">
+          <path d={`M ${widthSampleX} ${widthSampleY - 4} V ${widthSampleY - 10} H ${widthSampleX + pixelWidth} V ${widthSampleY - 4}`} />
+          <path d={`M ${widthSampleX + pixelWidth / 2} ${widthSampleY - 10} V 24 H 233`} />
 
-          <path d={`M ${sampleX - 7} ${sampleY} H ${sampleX - 13} V ${sampleY + pixelHeight} H ${sampleX - 7}`} />
-          <path d={`M ${sampleX - 13} ${sampleY + pixelHeight / 2} H 44 V 101`} />
+          <path d={`M ${heightSampleX - 4} ${heightSampleY} H ${heightSampleX - 10} V ${heightSampleY + pixelHeight} H ${heightSampleX - 4}`} />
+          <path d={`M ${heightSampleX - 10} ${heightSampleY + pixelHeight / 2} H 44 V 101`} />
         </g>
-        <g className="guide-gap-measurement" stroke={measurementColor} filter="url(#geometry-guide-measurement-halo)" aria-hidden="true">
+        <g className="guide-gap-measurement" stroke={appearance.pixel} aria-hidden="true">
           <path d={`M ${gapStart} ${sampleY + pixelHeight + 3} V ${gapMeasureY} H ${gapEnd} V ${sampleY + pixelHeight + 3}`} />
           <path d={`M ${gapCenter} ${gapMeasureY} H 258 V 132`} />
         </g>

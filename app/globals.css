@@ -225,9 +225,10 @@
 .guide-dimension-measurement,
 .guide-gap-measurement {
   fill: none;
+  stroke-opacity: 0.68;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.6;
+  stroke-width: 1.3;
 }
 
 .guide-gap-highlight {
