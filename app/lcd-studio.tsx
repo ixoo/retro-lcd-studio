@@ -420,10 +420,10 @@ function ShadowGuide({ appearance }: { appearance: LcdAppearance }) {
   const offsetY = Math.max(-24, Math.min(24, -appearance.shadowOffsetMm[1] * offsetScale));
   const shadowX = pixelX + offsetX;
   const shadowY = pixelY + offsetY;
-  const shadowCenterX = shadowX + pixelWidth / 2;
-  const shadowCenterY = shadowY + pixelHeight / 2;
-  const pixelCenterX = pixelX + pixelWidth / 2;
-  const pixelCenterY = pixelY + pixelHeight / 2;
+  const pixelRight = pixelX + pixelWidth;
+  const shadowRight = shadowX + pixelWidth;
+  const pixelBottom = pixelY + pixelHeight;
+  const shadowBottom = shadowY + pixelHeight;
   const blur = Math.min(Math.max(appearance.shadowSoftnessMm * scale, 0.05), 14);
   const xMeasureY = 174;
   const yMeasureX = 220;
@@ -462,11 +462,11 @@ function ShadowGuide({ appearance }: { appearance: LcdAppearance }) {
         />
 
         <g className="guide-shadow-measurement" stroke={appearance.pixel} aria-hidden="true">
-          <path d={`M ${pixelCenterX} ${xMeasureY - 4} V ${xMeasureY} H ${shadowCenterX} V ${xMeasureY - 4}`} />
-          <path d={`M ${(pixelCenterX + shadowCenterX) / 2} ${xMeasureY} V 200 H 230`} />
+          <path d={`M ${pixelRight} ${xMeasureY - 4} V ${xMeasureY} H ${shadowRight} V ${xMeasureY - 4}`} />
+          <path d={`M ${(pixelRight + shadowRight) / 2} ${xMeasureY} V 200 H 230`} />
 
-          <path d={`M ${yMeasureX - 4} ${pixelCenterY} H ${yMeasureX} V ${shadowCenterY} H ${yMeasureX - 4}`} />
-          <path d={`M ${yMeasureX} ${(pixelCenterY + shadowCenterY) / 2} H 230 V 104`} />
+          <path d={`M ${yMeasureX - 4} ${pixelBottom} H ${yMeasureX} V ${shadowBottom} H ${yMeasureX - 4}`} />
+          <path d={`M ${yMeasureX} ${(pixelBottom + shadowBottom) / 2} H 230 V 104`} />
 
           <path d={`M ${softnessTargetX} ${softnessTargetY} H 78 V 23`} />
           <path d={`M ${opacityTargetX} ${opacityTargetY} H 78 V 200`} />
