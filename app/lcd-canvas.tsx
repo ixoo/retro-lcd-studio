@@ -42,6 +42,7 @@ type LcdCanvasProps = {
 type Camera = {
   yaw: number;
   pitch: number;
+  roll: number;
   zoom: number;
   panX: number;
   panY: number;
@@ -250,10 +251,12 @@ function inverseProjection(camera: Camera) {
   const sineYaw = Math.sin(camera.yaw);
   const cosinePitch = Math.cos(camera.pitch);
   const sinePitch = Math.sin(camera.pitch);
-  const m00 = cosineYaw;
-  const m01 = sineYaw * sinePitch;
-  const m10 = 0;
-  const m11 = cosinePitch;
+  const cosineRoll = Math.cos(camera.roll);
+  const sineRoll = Math.sin(camera.roll);
+  const m00 = cosineRoll * cosineYaw;
+  const m01 = cosineRoll * sineYaw * sinePitch - sineRoll * cosinePitch;
+  const m10 = sineRoll * cosineYaw;
+  const m11 = sineRoll * sineYaw * sinePitch + cosineRoll * cosinePitch;
   const determinant = m00 * m11 - m01 * m10;
 
   return {
@@ -270,6 +273,10 @@ function inverseProjection(camera: Camera) {
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function normalizeAngle(angle: number) {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
 
 export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
@@ -299,6 +306,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const cameraRef = useRef<Camera>({
       yaw: 0,
       pitch: 0,
+      roll: 0,
       zoom: 40,
       panX: 0,
       panY: 0,
@@ -306,7 +314,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     });
     const dragRef = useRef<null | {
       pointerId: number;
-      kind: 'rotate' | 'pan' | 'paint';
+      kind: 'rotate' | 'roll' | 'pan' | 'paint';
       x: number;
       y: number;
       paintValue?: 0 | 1;
@@ -316,6 +324,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const touchGestureRef = useRef<null | {
       pointerIds: [number, number];
       initialDistance: number;
+      initialAngle: number;
+      initialRoll: number;
       initialZoom: number;
       localX: number;
       localY: number;
@@ -349,6 +359,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       cameraRef.current = {
         yaw: 0,
         pitch: 0,
+        roll: 0,
         zoom,
         panX: -centerXMm * zoom,
         panY: -centerYMm * zoom,
@@ -634,6 +645,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       touchGestureRef.current = {
         pointerIds: [firstId, secondId],
         initialDistance: Math.max(Math.hypot(second.x - first.x, second.y - first.y), 1),
+        initialAngle: Math.atan2(second.y - first.y, second.x - first.x),
+        initialRoll: camera.roll,
         initialZoom: camera.zoom,
         localX: (projection.inv00 * (screenX - camera.panX) + projection.inv01 * (screenY - camera.panY)) / camera.zoom,
         localY: (projection.inv10 * (screenX - camera.panX) + projection.inv11 * (screenY - camera.panY)) / camera.zoom,
@@ -656,10 +669,15 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       }
 
       const shouldPan = event.shiftKey || event.button === 1 || event.button === 2;
-      let kind: 'rotate' | 'pan' | 'paint' = shouldPan ? 'pan' : 'rotate';
+      const shouldRoll = event.altKey && !shouldPan;
+      let kind: 'rotate' | 'roll' | 'pan' | 'paint' = shouldPan
+        ? 'pan'
+        : shouldRoll
+          ? 'roll'
+          : 'rotate';
       let paintValue: 0 | 1 | undefined;
 
-      if (modeRef.current === 'edit' && !shouldPan) {
+      if (modeRef.current === 'edit' && !shouldPan && !shouldRoll) {
         const cell = cellAtPointer(event.clientX, event.clientY);
         if (!cell) return;
         kind = 'paint';
@@ -694,13 +712,13 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           if (!first || !second || !canvas) return;
 
           const distance = Math.max(Math.hypot(second.x - first.x, second.y - first.y), 1);
+          const angle = Math.atan2(second.y - first.y, second.x - first.x);
           const centerX = (first.x + second.x) / 2;
           const centerY = (first.y + second.y) / 2;
           const bounds = canvas.getBoundingClientRect();
           const screenX = centerX - bounds.left - bounds.width * 0.5;
           const screenY = bounds.height * 0.5 - (centerY - bounds.top);
           const camera = cameraRef.current;
-          const projection = inverseProjection(camera);
           const nextZoom = clamp(
             gesture.initialZoom * distance / gesture.initialDistance,
             8,
@@ -708,6 +726,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           );
 
           camera.zoom = nextZoom;
+          camera.roll = normalizeAngle(
+            gesture.initialRoll + normalizeAngle(angle - gesture.initialAngle),
+          );
+          const projection = inverseProjection(camera);
           camera.panX = screenX - nextZoom * (
             projection.m00 * gesture.localX + projection.m01 * gesture.localY
           );
@@ -729,6 +751,9 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       if (drag.kind === 'rotate') {
         cameraRef.current.yaw = clamp(cameraRef.current.yaw + deltaX * 0.0065, -MAX_TILT_RADIANS, MAX_TILT_RADIANS);
         cameraRef.current.pitch = clamp(cameraRef.current.pitch + deltaY * 0.0065, -MAX_TILT_RADIANS, MAX_TILT_RADIANS);
+        scheduleDraw();
+      } else if (drag.kind === 'roll') {
+        cameraRef.current.roll = normalizeAngle(cameraRef.current.roll + deltaX * 0.009);
         scheduleDraw();
       } else if (drag.kind === 'pan') {
         cameraRef.current.panX += deltaX;
