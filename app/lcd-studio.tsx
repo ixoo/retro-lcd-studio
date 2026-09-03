@@ -567,28 +567,16 @@ export function LcdStudio() {
         inert={!panelOpen}
       >
         <div className="panel-heading">
-          <div>
-            <span className="eyebrow">CONTROL DECK</span>
-            <h1>Surface setup</h1>
-          </div>
-          <Button type="button" size="icon-sm" variant="ghost" aria-label="Close settings" onClick={() => setPanelOpen(false)}>
+          <h1>Appearance</h1>
+          <Button type="button" size="icon-sm" variant="ghost" aria-label="Close appearance" onClick={() => setPanelOpen(false)}>
             <PanelRightClose />
           </Button>
         </div>
 
-          <section className="panel-section appearance-section">
-            <div className="section-heading">
-              <div>
-                <h2>Appearance</h2>
-                <p>Flat color, spacing, and pixel shadow.</p>
-              </div>
-            </div>
-
+        <div className="panel-section appearance-section">
+          <section className="control-group" aria-labelledby="palette-heading">
+            <h2 id="palette-heading">Palette</h2>
             <div className="preset-block">
-              <div className="preset-label">
-                <span>Color preset</span>
-                <output>{activeColorPreset?.label ?? 'Custom'}</output>
-              </div>
               <RadioGroup
                 className="preset-grid"
                 value={activeColorPreset?.id ?? ''}
@@ -623,44 +611,41 @@ export function LcdStudio() {
             </div>
 
             <div className="toggle-control">
-              <div>
-                <label htmlFor="inverted-rendering">Inverted</label>
-                <p>Render 0 pixels on and 1 pixels off without changing bitmap data.</p>
-              </div>
+              <label htmlFor="inverted-rendering">Invert pixels</label>
               <Switch
                 id="inverted-rendering"
                 checked={appearance.inverted}
-                aria-label="Invert LCD rendering"
+                aria-label="Invert pixels"
                 onCheckedChange={setInvertedRendering}
               />
             </div>
-
-            <div className="unit-reference">
-              <span><strong>Content</strong> uses integer pixel coordinates.</span>
-              <span><strong>Geometry</strong> uses millimetres.</span>
-            </div>
-
-            <ControlSlider label="Pixel width" value={appearance.pixelWidthMm} formattedValue={formatMillimetres(appearance.pixelWidthMm)} min={0.25} max={5} step={0.05} onChange={(pixelWidthMm) => setAppearance((current) => ({ ...current, pixelWidthMm }))} />
-            <ControlSlider label="Pixel height" value={appearance.pixelHeightMm} formattedValue={formatMillimetres(appearance.pixelHeightMm)} min={0.25} max={5} step={0.05} onChange={(pixelHeightMm) => setAppearance((current) => ({ ...current, pixelHeightMm }))} />
-            <ControlSlider label="Pixel gap" value={appearance.gapMm} formattedValue={formatMillimetres(appearance.gapMm)} min={0} max={1} step={0.01} onChange={(gapMm) => setAppearance((current) => ({ ...current, gapMm }))} />
-            <div className="derived-value">
-              <span>Pixel pitch</span>
-              <output>{formatMillimetreDimensions(appearance.pixelWidthMm + appearance.gapMm, appearance.pixelHeightMm + appearance.gapMm)}</output>
-            </div>
-            <ControlSlider label="Shadow X" value={appearance.shadowOffsetMm[0]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[0])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [value, current.shadowOffsetMm[1]] }))} />
-            <ControlSlider label="Shadow Y" value={appearance.shadowOffsetMm[1]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[1])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [current.shadowOffsetMm[0], value] }))} />
-            <ControlSlider label="Softness" value={appearance.shadowSoftnessMm} formattedValue={formatMillimetres(appearance.shadowSoftnessMm)} min={0} max={1} step={0.01} onChange={(shadowSoftnessMm) => setAppearance((current) => ({ ...current, shadowSoftnessMm }))} />
-            <ControlSlider label="Opacity" value={appearance.shadowOpacity} formattedValue={`${Math.round(appearance.shadowOpacity * 100)}%`} min={0} max={0.6} step={0.01} onChange={(shadowOpacity) => setAppearance((current) => ({ ...current, shadowOpacity }))} />
-
-            <Button type="button" variant="outline" className="reset-appearance" onClick={() => setAppearance(DEFAULT_APPEARANCE)}>
-              <Settings2 data-icon="inline-start" /> Reset appearance
-            </Button>
           </section>
 
-        <footer className="panel-footer">
-          <span>STATUS</span>
-          <output aria-live="polite">{actionStatus}</output>
-        </footer>
+          <section className="control-group" aria-labelledby="geometry-heading">
+            <h2 id="geometry-heading">Pixel geometry</h2>
+            <ControlSlider label="Width" value={appearance.pixelWidthMm} formattedValue={formatMillimetres(appearance.pixelWidthMm)} min={0.25} max={5} step={0.05} onChange={(pixelWidthMm) => setAppearance((current) => ({ ...current, pixelWidthMm }))} />
+            <ControlSlider label="Height" value={appearance.pixelHeightMm} formattedValue={formatMillimetres(appearance.pixelHeightMm)} min={0.25} max={5} step={0.05} onChange={(pixelHeightMm) => setAppearance((current) => ({ ...current, pixelHeightMm }))} />
+            <ControlSlider label="Gap" value={appearance.gapMm} formattedValue={formatMillimetres(appearance.gapMm)} min={0} max={1} step={0.01} onChange={(gapMm) => setAppearance((current) => ({ ...current, gapMm }))} />
+            <div className="derived-value">
+              <span>Pitch</span>
+              <output>{formatMillimetreDimensions(appearance.pixelWidthMm + appearance.gapMm, appearance.pixelHeightMm + appearance.gapMm)}</output>
+            </div>
+          </section>
+
+          <section className="control-group" aria-labelledby="shadow-heading">
+            <h2 id="shadow-heading">Shadow</h2>
+            <ControlSlider label="X offset" value={appearance.shadowOffsetMm[0]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[0])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [value, current.shadowOffsetMm[1]] }))} />
+            <ControlSlider label="Y offset" value={appearance.shadowOffsetMm[1]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[1])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [current.shadowOffsetMm[0], value] }))} />
+            <ControlSlider label="Softness" value={appearance.shadowSoftnessMm} formattedValue={formatMillimetres(appearance.shadowSoftnessMm)} min={0} max={1} step={0.01} onChange={(shadowSoftnessMm) => setAppearance((current) => ({ ...current, shadowSoftnessMm }))} />
+            <ControlSlider label="Opacity" value={appearance.shadowOpacity} formattedValue={`${Math.round(appearance.shadowOpacity * 100)}%`} min={0} max={0.6} step={0.01} onChange={(shadowOpacity) => setAppearance((current) => ({ ...current, shadowOpacity }))} />
+          </section>
+
+          <Button type="button" variant="outline" className="reset-appearance" onClick={() => setAppearance(DEFAULT_APPEARANCE)}>
+            <Settings2 data-icon="inline-start" /> Reset
+          </Button>
+        </div>
+
+        <output className="status-announcer" aria-live="polite">{actionStatus}</output>
       </aside>
 
       <div className="gesture-hint" aria-live="polite" data-panel-open={panelOpen}>
