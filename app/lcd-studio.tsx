@@ -975,6 +975,23 @@ export function LcdStudio() {
     if (clipboardBitmap) placeBitmapAt(clipboardBitmap, 'Selection', row, column);
   };
 
+  const bitmapFromSelection = useCallback((selectedArea: LcdSelection) => (
+    Array.from({ length: selectedArea.height }, (_, rowOffset) => (
+      Array.from({ length: selectedArea.width }, (_, columnOffset) => (
+        bitmapRef.current[selectedArea.row + rowOffset]?.[selectedArea.column + columnOffset] ?? '0'
+      )).join('')
+    ))
+  ), []);
+
+  const copySelectionToBuffer = useCallback((selectedArea: LcdSelection) => {
+    if (selectedArea.width > MAX_BITMAP_DIMENSION || selectedArea.height > MAX_BITMAP_DIMENSION) {
+      setActionStatus(`Selection exceeds the ${MAX_BITMAP_DIMENSION} × ${MAX_BITMAP_DIMENSION} technical limit`);
+      return;
+    }
+    setClipboardBitmap(bitmapFromSelection(selectedArea));
+    setActionStatus(`Copied ${selectedArea.width} × ${selectedArea.height} cells`);
+  }, [bitmapFromSelection]);
+
   const cutSelection = useCallback(() => {
     if (!selection) return;
     if (selection.width > MAX_BITMAP_DIMENSION || selection.height > MAX_BITMAP_DIMENSION) {
@@ -983,11 +1000,7 @@ export function LcdStudio() {
     }
 
     const current = bitmapRef.current;
-    const clipboard = Array.from({ length: selection.height }, (_, rowOffset) => (
-      Array.from({ length: selection.width }, (_, columnOffset) => (
-        current[selection.row + rowOffset]?.[selection.column + columnOffset] ?? '0'
-      )).join('')
-    ));
+    const clipboard = bitmapFromSelection(selection);
     const next = current.map((row) => row.split(''));
     for (let rowOffset = 0; rowOffset < selection.height; rowOffset += 1) {
       const targetRow = selection.row + rowOffset;
@@ -1005,7 +1018,7 @@ export function LcdStudio() {
     setSelection(null);
     setEditTool('paste');
     setActionStatus(`Cut ${selection.width} × ${selection.height} cells`);
-  }, [replaceBitmap, selection]);
+  }, [bitmapFromSelection, replaceBitmap, selection]);
 
   const beginPaste = useCallback(() => {
     if (!clipboardBitmap) return;
@@ -1482,6 +1495,7 @@ export function LcdStudio() {
           onStamp={stampAt}
           onPaste={pasteAt}
           onSelectionChange={setSelection}
+          onSelectionEnd={copySelectionToBuffer}
           onPaintStart={beginPaint}
           onPaintEnd={finishPaint}
           appearance={appearance}

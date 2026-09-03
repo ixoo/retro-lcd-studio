@@ -49,6 +49,7 @@ type LcdCanvasProps = {
   onStamp: (row: number, column: number) => void;
   onPaste: (row: number, column: number) => void;
   onSelectionChange: (selection: LcdSelection) => void;
+  onSelectionEnd: (selection: LcdSelection) => void;
   onPaintStart?: () => void;
   onPaintEnd?: () => void;
 };
@@ -419,6 +420,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       onStamp,
       onPaste,
       onSelectionChange,
+      onSelectionEnd,
       onPaintStart,
       onPaintEnd,
     },
@@ -435,6 +437,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const onStampRef = useRef(onStamp);
     const onPasteRef = useRef(onPaste);
     const onSelectionChangeRef = useRef(onSelectionChange);
+    const onSelectionEndRef = useRef(onSelectionEnd);
     const onPaintStartRef = useRef(onPaintStart);
     const onPaintEndRef = useRef(onPaintEnd);
     const modeRef = useRef(mode);
@@ -802,6 +805,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       onStampRef.current = onStamp;
       onPasteRef.current = onPaste;
       onSelectionChangeRef.current = onSelectionChange;
+      onSelectionEndRef.current = onSelectionEnd;
       onPaintStartRef.current = onPaintStart;
       onPaintEndRef.current = onPaintEnd;
       modeRef.current = mode;
@@ -810,7 +814,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         stampPreviewCellRef.current = null;
         scheduleDraw();
       }
-    }, [editTool, mode, onPaintEnd, onPaintStart, onPaste, onPixelChange, onSelectionChange, onStamp]);
+    }, [editTool, mode, onPaintEnd, onPaintStart, onPaste, onPixelChange, onSelectionChange, onSelectionEnd, onStamp]);
 
     const cellAtPointer = (clientX: number, clientY: number) => {
       const canvas = canvasRef.current;
@@ -867,15 +871,19 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       scheduleDraw();
     };
 
-    const updateSelection = (anchor: { row: number; column: number }, cell: { row: number; column: number }) => {
+    const selectionBetween = (anchor: { row: number; column: number }, cell: { row: number; column: number }): LcdSelection => {
       const row = Math.min(anchor.row, cell.row);
       const column = Math.min(anchor.column, cell.column);
-      onSelectionChangeRef.current({
+      return {
         row,
         column,
         width: Math.abs(cell.column - anchor.column) + 1,
         height: Math.abs(cell.row - anchor.row) + 1,
-      });
+      };
+    };
+
+    const updateSelection = (anchor: { row: number; column: number }, cell: { row: number; column: number }) => {
+      onSelectionChangeRef.current(selectionBetween(anchor, cell));
     };
 
     const clearStampPreview = () => {
@@ -1071,6 +1079,9 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         if (!dragRef.current.lastCell && event.type === 'pointerup') {
           placeAtPointer(event.clientX, event.clientY);
         }
+      } else if (dragRef.current.kind === 'select' && dragRef.current.selectionAnchor && event.type === 'pointerup') {
+        const cell = cellAtPointer(event.clientX, event.clientY);
+        if (cell) onSelectionEndRef.current(selectionBetween(dragRef.current.selectionAnchor, cell));
       }
       dragRef.current = null;
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
