@@ -136,6 +136,8 @@ type GpuRuntime = {
   destroy: () => void;
 };
 
+const MAX_TILT_RADIANS = 1.38;
+
 const SHADER = /* wgsl */ `
 struct Uniforms {
   viewport: vec2<f32>,
@@ -623,8 +625,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       drag.y = event.clientY;
 
       if (drag.kind === 'rotate') {
-        cameraRef.current.yaw = clamp(cameraRef.current.yaw + deltaX * 0.0065, -1.05, 1.05);
-        cameraRef.current.pitch = clamp(cameraRef.current.pitch + deltaY * 0.0065, -1.05, 1.05);
+        cameraRef.current.yaw = clamp(cameraRef.current.yaw + deltaX * 0.0065, -MAX_TILT_RADIANS, MAX_TILT_RADIANS);
+        cameraRef.current.pitch = clamp(cameraRef.current.pitch + deltaY * 0.0065, -MAX_TILT_RADIANS, MAX_TILT_RADIANS);
         scheduleDraw();
       } else if (drag.kind === 'pan') {
         cameraRef.current.panX += deltaX;
