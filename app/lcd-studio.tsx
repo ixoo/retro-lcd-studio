@@ -42,7 +42,8 @@ const INITIAL_BITMAP = [
 const DEFAULT_APPEARANCE: LcdAppearance = {
   background: '#aeb5a7',
   pixel: '#111512',
-  pixelSizeMm: 1,
+  pixelWidthMm: 1,
+  pixelHeightMm: 1,
   gapMm: 0.18,
   shadowOffsetMm: [0.08, -0.08],
   shadowSoftnessMm: 0.06,
@@ -145,6 +146,10 @@ function firstSliderValue(value: number | readonly number[]) {
 
 function formatMillimetres(value: number) {
   return `${value.toFixed(2)} mm`;
+}
+
+function formatMillimetreDimensions(width: number, height: number) {
+  return `${width.toFixed(2)} × ${height.toFixed(2)} mm`;
 }
 
 function nextFrame() {
@@ -641,11 +646,12 @@ export function LcdStudio() {
               <span><strong>Geometry</strong> uses millimetres.</span>
             </div>
 
-            <ControlSlider label="Pixel size" value={appearance.pixelSizeMm} formattedValue={formatMillimetres(appearance.pixelSizeMm)} min={0.25} max={5} step={0.05} onChange={(pixelSizeMm) => setAppearance((current) => ({ ...current, pixelSizeMm }))} />
+            <ControlSlider label="Pixel width" value={appearance.pixelWidthMm} formattedValue={formatMillimetres(appearance.pixelWidthMm)} min={0.25} max={5} step={0.05} onChange={(pixelWidthMm) => setAppearance((current) => ({ ...current, pixelWidthMm }))} />
+            <ControlSlider label="Pixel height" value={appearance.pixelHeightMm} formattedValue={formatMillimetres(appearance.pixelHeightMm)} min={0.25} max={5} step={0.05} onChange={(pixelHeightMm) => setAppearance((current) => ({ ...current, pixelHeightMm }))} />
             <ControlSlider label="Pixel gap" value={appearance.gapMm} formattedValue={formatMillimetres(appearance.gapMm)} min={0} max={1} step={0.01} onChange={(gapMm) => setAppearance((current) => ({ ...current, gapMm }))} />
             <div className="derived-value">
               <span>Pixel pitch</span>
-              <output>{formatMillimetres(appearance.pixelSizeMm + appearance.gapMm)}</output>
+              <output>{formatMillimetreDimensions(appearance.pixelWidthMm + appearance.gapMm, appearance.pixelHeightMm + appearance.gapMm)}</output>
             </div>
             <ControlSlider label="Shadow X" value={appearance.shadowOffsetMm[0]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[0])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [value, current.shadowOffsetMm[1]] }))} />
             <ControlSlider label="Shadow Y" value={appearance.shadowOffsetMm[1]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[1])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [current.shadowOffsetMm[0], value] }))} />

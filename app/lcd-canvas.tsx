@@ -13,8 +13,9 @@ export type LcdMode = 'view' | 'edit';
 export type LcdAppearance = {
   background: string;
   pixel: string;
-  /** Active square pixel edge length in millimetres. */
-  pixelSizeMm: number;
+  /** Active pixel dimensions in millimetres. */
+  pixelWidthMm: number;
+  pixelHeightMm: number;
   /** Physical separation between adjacent active pixels in millimetres. */
   gapMm: number;
   shadowOffsetMm: [number, number];
@@ -172,11 +173,11 @@ fn vertexMain(@builtin(vertex_index) index: u32) -> VertexOutput {
 
 fn activePixelDistance(local: vec2<f32>) -> f32 {
   let dimensions = uniforms.bitmapSize;
-  let pixelSizeMm = uniforms.geometryMm.x;
-  let pitchMm = pixelSizeMm + uniforms.geometryMm.y;
+  let pixelSizeMm = uniforms.geometryMm.xy;
+  let pitchMm = pixelSizeMm + vec2<f32>(uniforms.geometryMm.z);
   let grid = vec2<f32>(
-    local.x / pitchMm + dimensions.x * 0.5,
-    dimensions.y * 0.5 - local.y / pitchMm
+    local.x / pitchMm.x + dimensions.x * 0.5,
+    dimensions.y * 0.5 - local.y / pitchMm.y
   );
   let cell = floor(grid);
 
@@ -191,8 +192,8 @@ fn activePixelDistance(local: vec2<f32>) -> f32 {
 
   let withinCell = fract(grid);
   let fromCenterMm = (withinCell - vec2<f32>(0.5)) * pitchMm;
-  let halfSizeMm = 0.5 * pixelSizeMm;
-  return max(abs(fromCenterMm.x), abs(fromCenterMm.y)) - halfSizeMm;
+  let edgeDistanceMm = abs(fromCenterMm) - 0.5 * pixelSizeMm;
+  return max(edgeDistanceMm.x, edgeDistanceMm.y);
 }
 
 @fragment
@@ -211,7 +212,7 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   let pixelDistance = activePixelDistance(local);
   let shadowDistance = activePixelDistance(local - uniforms.shadowOffsetMm);
   let pixelCoverage = 1.0 - smoothstep(-antialias, antialias, pixelDistance);
-  let shadowFeather = max(uniforms.geometryMm.z, antialias);
+  let shadowFeather = max(uniforms.geometryMm.w, antialias);
   let shadowCoverage = (1.0 - smoothstep(-shadowFeather, shadowFeather, shadowDistance))
     * uniforms.shadowOpacity;
 
@@ -316,11 +317,12 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       const bounds = canvas.getBoundingClientRect();
       const width = Math.max(bitmapRef.current[0]?.length ?? 1, 1);
       const height = Math.max(bitmapRef.current.length, 1);
-      const pitchMm = appearanceRef.current.pixelSizeMm + appearanceRef.current.gapMm;
+      const pitchXMm = appearanceRef.current.pixelWidthMm + appearanceRef.current.gapMm;
+      const pitchYMm = appearanceRef.current.pixelHeightMm + appearanceRef.current.gapMm;
       cameraRef.current = {
         yaw: 0,
         pitch: 0,
-        zoom: clamp(Math.min((bounds.width - 96) / (width * pitchMm), (bounds.height - 180) / (height * pitchMm)) * 0.82, 8, 180),
+        zoom: clamp(Math.min((bounds.width - 96) / (width * pitchXMm), (bounds.height - 180) / (height * pitchYMm)) * 0.82, 8, 180),
         panX: 0,
         panY: 0,
         fitted: true,
@@ -481,7 +483,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
                 canvas!.width, canvas!.height, bitmapWidth, bitmapHeight,
                 projection.inv00, projection.inv01, projection.inv10, projection.inv11,
                 camera.panX * pixelRatio, camera.panY * pixelRatio, camera.zoom * pixelRatio, appearanceRef.current.shadowOpacity,
-                appearanceRef.current.pixelSizeMm, appearanceRef.current.gapMm, appearanceRef.current.shadowSoftnessMm, 0,
+                appearanceRef.current.pixelWidthMm, appearanceRef.current.pixelHeightMm, appearanceRef.current.gapMm, appearanceRef.current.shadowSoftnessMm,
                 appearanceRef.current.shadowOffsetMm[0], appearanceRef.current.shadowOffsetMm[1], 0, 0,
                 ...background,
                 ...pixel,
@@ -565,9 +567,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       const localY = (projection.inv10 * screenX + projection.inv11 * screenY) / camera.zoom;
       const width = bitmapRef.current[0]?.length ?? 0;
       const height = bitmapRef.current.length;
-      const pitchMm = appearanceRef.current.pixelSizeMm + appearanceRef.current.gapMm;
-      const column = Math.floor(localX / pitchMm + width * 0.5);
-      const row = Math.floor(height * 0.5 - localY / pitchMm);
+      const pitchXMm = appearanceRef.current.pixelWidthMm + appearanceRef.current.gapMm;
+      const pitchYMm = appearanceRef.current.pixelHeightMm + appearanceRef.current.gapMm;
+      const column = Math.floor(localX / pitchXMm + width * 0.5);
+      const row = Math.floor(height * 0.5 - localY / pitchYMm);
       if (column < 0 || row < 0 || column >= width || row >= height) return null;
       return { row, column };
     };
