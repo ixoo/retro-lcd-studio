@@ -222,25 +222,19 @@
   stroke-width: 0.75;
 }
 
-.guide-measurements {
-  fill: none;
-  stroke: rgb(16 20 17 / 58%);
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1;
-}
-
-.guide-gap-highlight {
-  fill: #d7ff45;
-  opacity: 0.56;
-}
-
+.guide-dimension-measurement,
 .guide-gap-measurement {
   fill: none;
   stroke: rgb(16 20 17 / 82%);
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.4;
+}
+
+.guide-dimension-highlight,
+.guide-gap-highlight {
+  fill: #d7ff45;
+  opacity: 0.56;
 }
 
 .guide-callout {
@@ -264,16 +258,14 @@
   border-color: #d7ff45;
 }
 
-.guide-callout span,
-.guide-pitch span {
+.guide-callout span {
   color: #aeb8ad;
   font-size: 0.6875rem;
   font-weight: 600;
   line-height: 1;
 }
 
-.guide-callout strong,
-.guide-pitch strong {
+.guide-callout strong {
   font: 600 0.625rem/1.15 var(--font-geist-mono), monospace;
   white-space: nowrap;
 }
@@ -291,20 +283,6 @@
 .guide-gap {
   top: 7.15rem;
   right: 0.35rem;
-}
-
-.guide-pitch {
-  position: absolute;
-  bottom: 0.5rem;
-  left: 50%;
-  display: flex;
-  align-items: baseline;
-  gap: 0.45rem;
-  padding: 0.32rem 0.48rem;
-  border-radius: 0.35rem;
-  color: #eef2e9;
-  background: rgb(23 27 25 / 82%);
-  transform: translateX(-50%);
 }
 
 .geometry-controls {

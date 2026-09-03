@@ -240,10 +240,6 @@ function formatMillimetres(value: number) {
   return `${value.toFixed(2)} mm`;
 }
 
-function formatMillimetreDimensions(width: number, height: number) {
-  return `${width.toFixed(2)} × ${height.toFixed(2)} mm`;
-}
-
 function nextFrame() {
   return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 }
@@ -390,8 +386,26 @@ function GeometryGuide({ appearance }: { appearance: LcdAppearance }) {
           rx="0.4"
           aria-hidden="true"
         />
+        <rect
+          className="guide-dimension-highlight"
+          x={sampleX}
+          y={sampleY - 2.5}
+          width={pixelWidth}
+          height="5"
+          rx="1"
+          aria-hidden="true"
+        />
+        <rect
+          className="guide-dimension-highlight"
+          x={sampleX - 2.5}
+          y={sampleY}
+          width="5"
+          height={pixelHeight}
+          rx="1"
+          aria-hidden="true"
+        />
 
-        <g className="guide-measurements" aria-hidden="true">
+        <g className="guide-dimension-measurement" aria-hidden="true">
           <path d={`M ${sampleX} ${sampleY - 7} V ${sampleY - 13} H ${sampleX + pixelWidth} V ${sampleY - 7}`} />
           <path d={`M ${sampleX + pixelWidth / 2} ${sampleY - 13} V 24 H 233`} />
 
@@ -413,10 +427,6 @@ function GeometryGuide({ appearance }: { appearance: LcdAppearance }) {
       <button type="button" className="guide-callout guide-gap" onClick={() => focusSlider('pixel-gap')}>
         <span>Gap</span><strong>{formatMillimetres(appearance.gapMm)}</strong>
       </button>
-      <div className="guide-pitch">
-        <span>Pitch</span>
-        <strong>{formatMillimetreDimensions(pitchXMm, pitchYMm)}</strong>
-      </div>
     </div>
   );
 }
