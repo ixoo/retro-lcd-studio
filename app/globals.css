@@ -462,7 +462,21 @@
 
 .sprite-library {
   display: grid;
+  gap: 0.8rem;
   width: 100%;
+}
+
+.sprite-category {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.sprite-category h3 {
+  margin: 0;
+  color: #89938a;
+  font: 650 0.64rem/1 var(--font-geist-mono), monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .text-tool-panel {
@@ -553,6 +567,12 @@
   width: 100%;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.4rem;
+}
+
+.clipboard-sprite-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid #2e3530;
 }
 
 .sprite-choice {

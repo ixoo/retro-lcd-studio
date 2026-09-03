@@ -50,30 +50,21 @@ const INITIAL_BITMAP_OFFSET: [number, number] = [
   -INITIAL_BITMAP.length / 2,
 ];
 
-const SPRITE_BITMAPS = [
-  {
-    id: 'lcd',
-    label: 'LCD',
-    rows: INITIAL_BITMAP,
-  },
-  {
-    id: 'smile',
-    label: 'Smile',
-    rows: [
-      '00111111100',
-      '01000000010',
-      '10010001001',
-      '10010001001',
-      '10000000001',
-      '10100000101',
-      '10011111001',
-      '01000000010',
-      '00111111100',
-    ],
-  },
+const SPRITE_CATEGORIES = [
+  { id: 'arcade', label: 'Arcade' },
+  { id: 'hardware', label: 'Hardware' },
+  { id: 'adventure', label: 'Adventure' },
+  { id: 'playful', label: 'Playful' },
+] as const;
+
+type SpriteCategoryId = (typeof SPRITE_CATEGORIES)[number]['id'];
+type SpriteBitmap = { id: string; label: string; category: SpriteCategoryId; rows: string[] };
+
+const SPRITE_BITMAPS: SpriteBitmap[] = [
   {
     id: 'invader',
     label: 'Invader',
+    category: 'arcade',
     rows: [
       '00100000100',
       '00010001000',
@@ -86,47 +77,9 @@ const SPRITE_BITMAPS = [
     ],
   },
   {
-    id: 'checker',
-    label: 'Checker',
-    rows: [
-      '101010101010',
-      '010101010101',
-      '101010101010',
-      '010101010101',
-      '101010101010',
-      '010101010101',
-      '101010101010',
-      '010101010101',
-    ],
-  },
-  {
-    id: 'heart',
-    label: 'Heart',
-    rows: [
-      '01100110',
-      '11111111',
-      '11111111',
-      '01111110',
-      '00111100',
-      '00011000',
-    ],
-  },
-  {
-    id: 'star',
-    label: 'Star',
-    rows: [
-      '00010000',
-      '00010000',
-      '11010110',
-      '01111100',
-      '00111000',
-      '01101100',
-      '01000100',
-    ],
-  },
-  {
     id: 'ghost',
     label: 'Ghost',
+    category: 'arcade',
     rows: [
       '00111100',
       '01111110',
@@ -138,16 +91,324 @@ const SPRITE_BITMAPS = [
     ],
   },
   {
-    id: 'bolt',
-    label: 'Bolt',
+    id: 'pixel-eater',
+    label: 'Pixel eater',
+    category: 'arcade',
+    rows: [
+      '00111100',
+      '01111110',
+      '11111000',
+      '11100000',
+      '11111000',
+      '01111110',
+      '00111100',
+    ],
+  },
+  {
+    id: 'cherries',
+    label: 'Cherries',
+    category: 'arcade',
+    rows: [
+      '00001110',
+      '00011000',
+      '00110000',
+      '01101100',
+      '11011010',
+      '11111111',
+      '01101110',
+    ],
+  },
+  {
+    id: 'joystick',
+    label: 'Joystick',
+    category: 'arcade',
     rows: [
       '00011000',
-      '00110000',
-      '01111100',
       '00011000',
-      '00110000',
-      '01100000',
+      '00011000',
+      '00011000',
+      '00111100',
+      '01111110',
+      '11111111',
     ],
+  },
+  {
+    id: 'gamepad',
+    label: 'Gamepad',
+    category: 'arcade',
+    rows: [
+      '001111111100',
+      '011111111110',
+      '111001100111',
+      '111111111111',
+      '111001100111',
+      '110000000011',
+      '100000000001',
+    ],
+  },
+  {
+    id: 'arcade-cabinet',
+    label: 'Arcade cabinet',
+    category: 'arcade',
+    rows: [
+      '01111110',
+      '01000010',
+      '01011010',
+      '01000010',
+      '01111110',
+      '01011010',
+      '01111110',
+      '01100110',
+    ],
+  },
+  {
+    id: 'space-ship',
+    label: 'Space ship',
+    category: 'arcade',
+    rows: [
+      '00011000',
+      '00111100',
+      '01111110',
+      '11011011',
+      '11111111',
+      '00111100',
+      '01011010',
+      '10000001',
+    ],
+  },
+  {
+    id: 'lcd',
+    label: 'LCD',
+    category: 'hardware',
+    rows: INITIAL_BITMAP,
+  },
+  {
+    id: 'computer',
+    label: 'Computer',
+    category: 'hardware',
+    rows: [
+      '01111110',
+      '11000011',
+      '10100101',
+      '10011001',
+      '11000011',
+      '01111110',
+      '00011000',
+      '00111100',
+    ],
+  },
+  {
+    id: 'floppy',
+    label: 'Floppy disk',
+    category: 'hardware',
+    rows: [
+      '11111110',
+      '11000110',
+      '11000110',
+      '11111110',
+      '11000010',
+      '10111110',
+      '10100110',
+      '11111110',
+    ],
+  },
+  {
+    id: 'cassette',
+    label: 'Cassette tape',
+    category: 'hardware',
+    rows: [
+      '0111111110',
+      '1100000011',
+      '1011111101',
+      '1010010101',
+      '1011111101',
+      '1100000011',
+      '0110110110',
+    ],
+  },
+  {
+    id: 'radio',
+    label: 'Pocket radio',
+    category: 'hardware',
+    rows: [
+      '00000110',
+      '00111100',
+      '11111111',
+      '10011001',
+      '10111101',
+      '10100101',
+      '11111111',
+    ],
+  },
+  {
+    id: 'camera',
+    label: 'Camera',
+    category: 'hardware',
+    rows: [
+      '00110000',
+      '01111000',
+      '11111111',
+      '11011011',
+      '10100101',
+      '11011011',
+      '11111111',
+    ],
+  },
+  {
+    id: 'calculator',
+    label: 'Calculator',
+    category: 'hardware',
+    rows: [
+      '01111110',
+      '01000010',
+      '01011010',
+      '01111110',
+      '01010110',
+      '01101010',
+      '01010110',
+      '01111110',
+    ],
+  },
+  {
+    id: 'phone',
+    label: 'Brick phone',
+    category: 'hardware',
+    rows: [
+      '00011000',
+      '00011000',
+      '00111100',
+      '00100100',
+      '00111100',
+      '00101000',
+      '00111100',
+      '00111100',
+    ],
+  },
+  {
+    id: 'heart',
+    label: 'Heart',
+    category: 'adventure',
+    rows: ['01100110', '11111111', '11111111', '01111110', '00111100', '00011000'],
+  },
+  {
+    id: 'star',
+    label: 'Star',
+    category: 'adventure',
+    rows: ['00010000', '00010000', '11010110', '01111100', '00111000', '01101100', '01000100'],
+  },
+  {
+    id: 'bolt',
+    label: 'Bolt',
+    category: 'adventure',
+    rows: ['00011000', '00110000', '01111100', '00011000', '00110000', '01100000'],
+  },
+  {
+    id: 'key',
+    label: 'Key',
+    category: 'adventure',
+    rows: ['01100000', '10010000', '10011111', '01100101', '00000111'],
+  },
+  {
+    id: 'coin',
+    label: 'Coin',
+    category: 'adventure',
+    rows: ['00111100', '01100110', '11011011', '11011011', '11011011', '01100110', '00111100'],
+  },
+  {
+    id: 'gem',
+    label: 'Gem',
+    category: 'adventure',
+    rows: ['00111100', '01111110', '11111111', '11011011', '01111110', '00111100', '00011000'],
+  },
+  {
+    id: 'potion',
+    label: 'Potion',
+    category: 'adventure',
+    rows: ['00111100', '00011000', '00111100', '01111110', '11100111', '11111111', '01111110', '00111100'],
+  },
+  {
+    id: 'sword',
+    label: 'Sword',
+    category: 'adventure',
+    rows: ['00000011', '00000110', '10001100', '01011000', '00110000', '01101000', '11000100'],
+  },
+  {
+    id: 'shield',
+    label: 'Shield',
+    category: 'adventure',
+    rows: ['11111111', '11011011', '11011011', '11011011', '01111110', '00111100', '00011000'],
+  },
+  {
+    id: 'crown',
+    label: 'Crown',
+    category: 'adventure',
+    rows: ['10000001', '11011011', '11111111', '10111101', '11111111', '01111110'],
+  },
+  {
+    id: 'skull',
+    label: 'Skull',
+    category: 'adventure',
+    rows: ['00111100', '01111110', '11011011', '11111111', '01111110', '00100100', '00100100'],
+  },
+  {
+    id: 'smile',
+    label: 'Smile',
+    category: 'playful',
+    rows: ['00111111100', '01000000010', '10010001001', '10010001001', '10000000001', '10100000101', '10011111001', '01000000010', '00111111100'],
+  },
+  {
+    id: 'cat',
+    label: 'Cat',
+    category: 'playful',
+    rows: ['10000001', '11000011', '11111111', '10100101', '11111111', '11011011', '01111110'],
+  },
+  {
+    id: 'duck',
+    label: 'Duck',
+    category: 'playful',
+    rows: ['00110000', '01111000', '01101011', '01111110', '00111100', '11111110', '01111100'],
+  },
+  {
+    id: 'fish',
+    label: 'Fish',
+    category: 'playful',
+    rows: ['00000100', '00111110', '01011011', '11111111', '01011011', '00111110', '00000100'],
+  },
+  {
+    id: 'mushroom',
+    label: 'Mushroom',
+    category: 'playful',
+    rows: ['00111100', '01111110', '11011011', '11111111', '00111100', '00100100', '00111100'],
+  },
+  {
+    id: 'flower',
+    label: 'Flower',
+    category: 'playful',
+    rows: ['00100100', '01111110', '00111100', '11111111', '00111100', '00011000', '00011000', '00111100'],
+  },
+  {
+    id: 'music-note',
+    label: 'Music note',
+    category: 'playful',
+    rows: ['00011110', '00010010', '00010010', '00010010', '01110010', '11100010', '01100000'],
+  },
+  {
+    id: 'sun',
+    label: 'Sun',
+    category: 'playful',
+    rows: ['10011001', '01011010', '00111100', '11111111', '00111100', '01011010', '10011001'],
+  },
+  {
+    id: 'moon',
+    label: 'Moon',
+    category: 'playful',
+    rows: ['00111100', '01111000', '11110000', '11110000', '11110000', '01111000', '00111100'],
+  },
+  {
+    id: 'checker',
+    label: 'Checker',
+    category: 'playful',
+    rows: ['101010101010', '010101010101', '101010101010', '010101010101', '101010101010', '010101010101', '101010101010', '010101010101'],
   },
 ];
 
@@ -1935,7 +2196,7 @@ export function LcdStudio() {
 
                 {editTool === 'stamp' && (
                   <div className="sprite-library tool-options" aria-label="Sprite library">
-                    <div className="sprite-grid">
+                    <div className="sprite-grid clipboard-sprite-grid">
                       <button
                         type="button"
                         className="sprite-choice"
@@ -1954,22 +2215,30 @@ export function LcdStudio() {
                           inverted={false}
                         />
                       </button>
-                      {SPRITE_BITMAPS.map((sprite) => (
-                        <button
-                          type="button"
-                          className="sprite-choice"
-                          key={sprite.id}
-                          aria-label={sprite.label}
-                          aria-pressed={selectedSpriteId === sprite.id}
-                          onClick={() => {
-                            setSelectedSpriteId(sprite.id);
-                            setActionStatus(`${sprite.label} stamp selected`);
-                          }}
-                        >
-                          <BitmapThumbnail rows={sprite.rows} background={appearance.background} pixel={appearance.pixel} inverted={false} />
-                        </button>
-                      ))}
                     </div>
+                    {SPRITE_CATEGORIES.map((category) => (
+                      <section className="sprite-category" key={category.id} aria-labelledby={`sprite-category-${category.id}`}>
+                        <h3 id={`sprite-category-${category.id}`}>{category.label}</h3>
+                        <div className="sprite-grid">
+                          {SPRITE_BITMAPS.filter((sprite) => sprite.category === category.id).map((sprite) => (
+                            <button
+                              type="button"
+                              className="sprite-choice"
+                              key={sprite.id}
+                              aria-label={sprite.label}
+                              title={sprite.label}
+                              aria-pressed={selectedSpriteId === sprite.id}
+                              onClick={() => {
+                                setSelectedSpriteId(sprite.id);
+                                setActionStatus(`${sprite.label} stamp selected`);
+                              }}
+                            >
+                              <BitmapThumbnail rows={sprite.rows} background={appearance.background} pixel={appearance.pixel} inverted={false} />
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
                   </div>
                 )}
 
