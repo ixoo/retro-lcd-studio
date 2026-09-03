@@ -1725,6 +1725,12 @@ export function LcdStudio() {
           editTool={editTool}
           textCursorSize={textCursorSize}
           textAnchor={textAnchor}
+          textCursorAnchor={textAnchor
+            ? {
+                row: textAnchor.row,
+                column: textAnchor.column + (textValue ? textPreviewBitmap[0]?.length ?? 0 : 0),
+              }
+            : null}
           stampBitmap={editTool === 'text'
             ? textPreviewBitmap
             : selectedSpriteId === CLIPBOARD_SPRITE_ID

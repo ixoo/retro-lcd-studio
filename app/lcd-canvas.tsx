@@ -45,6 +45,7 @@ type LcdCanvasProps = {
   stampBitmap: string[];
   textCursorSize: [number, number];
   textAnchor: { row: number; column: number } | null;
+  textCursorAnchor: { row: number; column: number } | null;
   selection: LcdSelection | null;
   appearance: LcdAppearance;
   onPixelChange: (row: number, column: number, value: 0 | 1) => void;
@@ -443,6 +444,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       stampBitmap,
       textCursorSize,
       textAnchor,
+      textCursorAnchor,
       selection,
       appearance,
       onPixelChange,
@@ -462,6 +464,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const stampBitmapRef = useRef(stampBitmap);
     const textCursorSizeRef = useRef(textCursorSize);
     const textAnchorRef = useRef(textAnchor);
+    const textCursorAnchorRef = useRef(textCursorAnchor);
     const selectionRef = useRef(selection);
     const bitmapOffsetRef = useRef(bitmapOffsetCells);
     const appearanceRef = useRef(appearance);
@@ -749,7 +752,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
               const selectionValues = currentSelection
                 ? [currentSelection.column, currentSelection.row, currentSelection.width, currentSelection.height]
                 : [0, 0, 0, 0];
-              const textCursorCell = activeTextAnchor ?? textCursorCellRef.current;
+              const textCursorCell = textCursorAnchorRef.current ?? textCursorCellRef.current;
               const textCursorValues = textCursorCell && textCursorVisibleRef.current
                 ? [textCursorCell.column, textCursorCell.row, ...textCursorSizeRef.current]
                 : [0, 0, 0, 0];
@@ -839,6 +842,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       textAnchorRef.current = textAnchor;
       scheduleDraw();
     }, [textAnchor]);
+
+    useEffect(() => {
+      textCursorAnchorRef.current = textCursorAnchor;
+      scheduleDraw();
+    }, [textCursorAnchor]);
 
     useEffect(() => {
       bitmapOffsetRef.current = bitmapOffsetCells;
