@@ -552,22 +552,10 @@ export function LcdStudio() {
 
   return (
     <main className="lcd-app" style={{ background: appearance.background }}>
-      <LcdCanvas
-        ref={canvasRef}
-        bitmap={bitmap}
-        bitmapOffsetCells={bitmapOffsetCells}
-        mode={mode}
-        onPixelChange={setPixel}
-        onPaintStart={beginPaint}
-        onPaintEnd={finishPaint}
-        appearance={appearance}
-      />
-
-      <div className="control-drawer">
-        <aside
-          id="controls-panel"
-          className="controls-panel"
-        >
+      <aside
+        id="controls-panel"
+        className="controls-panel"
+      >
           <div className="panel-heading">
             <h1>Controls</h1>
           </div>
@@ -699,18 +687,30 @@ export function LcdStudio() {
             </Button>
           </div>
 
-          <output className="status-announcer" aria-live="polite">{actionStatus}</output>
-        </aside>
-      </div>
+        <output className="status-announcer" aria-live="polite">{actionStatus}</output>
+      </aside>
 
-      <div className="gesture-hint" aria-live="polite">
-        <MousePointer2 aria-hidden="true" />
-        {mode === 'view' ? (
-          <span><strong>Drag</strong> to tilt · <strong>Shift-drag</strong> to pan · <strong>Scroll</strong> to zoom</span>
-        ) : (
-          <span><strong>Drag</strong> to paint · <strong>Shift-drag</strong> to pan · <strong>Scroll</strong> to zoom</span>
-        )}
-      </div>
+      <section className="render-pane" aria-label="LCD render">
+        <LcdCanvas
+          ref={canvasRef}
+          bitmap={bitmap}
+          bitmapOffsetCells={bitmapOffsetCells}
+          mode={mode}
+          onPixelChange={setPixel}
+          onPaintStart={beginPaint}
+          onPaintEnd={finishPaint}
+          appearance={appearance}
+        />
+
+        <div className="gesture-hint" aria-live="polite">
+          <MousePointer2 aria-hidden="true" />
+          {mode === 'view' ? (
+            <span><strong>Drag</strong> to tilt · <strong>Shift-drag</strong> to pan · <strong>Scroll</strong> to zoom</span>
+          ) : (
+            <span><strong>Drag</strong> to paint · <strong>Shift-drag</strong> to pan · <strong>Scroll</strong> to zoom</span>
+          )}
+        </div>
+      </section>
     </main>
   );
 }
