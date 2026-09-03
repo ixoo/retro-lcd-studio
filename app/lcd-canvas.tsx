@@ -9,6 +9,7 @@ import {
 } from 'react';
 
 export type LcdMode = 'view' | 'edit';
+export type LcdEditTool = 'pen' | 'text' | 'stamp' | 'select' | 'line' | 'rectangle' | 'ellipse' | 'polygon' | 'fill';
 
 export type LcdSelection = {
   row: number;
@@ -41,8 +42,9 @@ type LcdCanvasProps = {
   bitmap: string[];
   bitmapOffsetCells: [number, number];
   mode: LcdMode;
-  editTool: 'pen' | 'text' | 'stamp' | 'select';
+  editTool: LcdEditTool;
   stampBitmap: string[];
+  geometryPreviewAnchor: { row: number; column: number } | null;
   textCursorSize: [number, number];
   textAnchor: { row: number; column: number } | null;
   textCursorAnchor: { row: number; column: number } | null;
@@ -52,6 +54,11 @@ type LcdCanvasProps = {
   onStamp: (row: number, column: number) => void;
   onTextStart: (row: number, column: number) => void;
   onTextMove: (row: number, column: number) => void;
+  onGeometryPreview: (start: { row: number; column: number }, end: { row: number; column: number }, constrain: boolean) => void;
+  onGeometryCommit: (start: { row: number; column: number }, end: { row: number; column: number }, constrain: boolean) => void;
+  onGeometryCancel: () => void;
+  onGeometryPoint: (row: number, column: number) => void;
+  onGeometryHover: (cell: { row: number; column: number } | null) => void;
   onSelectionChange: (selection: LcdSelection) => void;
   onSelectionEnd: (selection: LcdSelection) => void;
   onPaintStart?: () => void;
@@ -434,6 +441,10 @@ function normalizeAngle(angle: number) {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
 
+function isDragGeometryTool(tool: LcdEditTool) {
+  return tool === 'line' || tool === 'rectangle' || tool === 'ellipse';
+}
+
 export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
   function LcdCanvas(
     {
@@ -442,6 +453,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       mode,
       editTool,
       stampBitmap,
+      geometryPreviewAnchor,
       textCursorSize,
       textAnchor,
       textCursorAnchor,
@@ -451,6 +463,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       onStamp,
       onTextStart,
       onTextMove,
+      onGeometryPreview,
+      onGeometryCommit,
+      onGeometryCancel,
+      onGeometryPoint,
+      onGeometryHover,
       onSelectionChange,
       onSelectionEnd,
       onPaintStart,
@@ -462,6 +479,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const runtimeRef = useRef<GpuRuntime | null>(null);
     const bitmapRef = useRef(bitmap);
     const stampBitmapRef = useRef(stampBitmap);
+    const geometryPreviewAnchorRef = useRef(geometryPreviewAnchor);
     const textCursorSizeRef = useRef(textCursorSize);
     const textAnchorRef = useRef(textAnchor);
     const textCursorAnchorRef = useRef(textCursorAnchor);
@@ -472,6 +490,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const onStampRef = useRef(onStamp);
     const onTextStartRef = useRef(onTextStart);
     const onTextMoveRef = useRef(onTextMove);
+    const onGeometryPreviewRef = useRef(onGeometryPreview);
+    const onGeometryCommitRef = useRef(onGeometryCommit);
+    const onGeometryCancelRef = useRef(onGeometryCancel);
+    const onGeometryPointRef = useRef(onGeometryPoint);
+    const onGeometryHoverRef = useRef(onGeometryHover);
     const onSelectionChangeRef = useRef(onSelectionChange);
     const onSelectionEndRef = useRef(onSelectionEnd);
     const onPaintStartRef = useRef(onPaintStart);
@@ -494,7 +517,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     });
     const dragRef = useRef<null | {
       pointerId: number;
-      kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'text' | 'text-move' | 'stamp' | 'select';
+      kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'text' | 'text-move' | 'stamp' | 'select' | 'geometry' | 'polygon' | 'fill';
       x: number;
       y: number;
       paintValue?: 0 | 1;
@@ -502,6 +525,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       selectionAnchor?: { row: number; column: number };
       textDragCell?: { row: number; column: number };
       textDragAnchor?: { row: number; column: number };
+      geometryAnchor?: { row: number; column: number };
+      geometryConstrain?: boolean;
     }>(null);
     const touchPointersRef = useRef(new Map<number, { x: number; y: number }>());
     const touchGestureRef = useRef<null | {
@@ -736,10 +761,15 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
               const pixel = hexToRgba(appearanceRef.current.pixel);
               const stampPreviewCell = stampPreviewCellRef.current;
               const activeTextAnchor = editToolRef.current === 'text' ? textAnchorRef.current : null;
+              const activeGeometryAnchor = isDragGeometryTool(editToolRef.current) || editToolRef.current === 'polygon'
+                ? geometryPreviewAnchorRef.current
+                : null;
               const stampWidth = stampBitmapRef.current[0]?.length ?? 0;
               const stampHeight = stampBitmapRef.current.length;
               const stampPreview = activeTextAnchor
                 ? [activeTextAnchor.column, activeTextAnchor.row, stampWidth, stampHeight]
+                : activeGeometryAnchor
+                ? [activeGeometryAnchor.column, activeGeometryAnchor.row, stampWidth, stampHeight]
                 : stampPreviewCell
                 ? [
                     stampPreviewCell.column - Math.floor(stampWidth / 2),
@@ -834,6 +864,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     }, [stampBitmap]);
 
     useEffect(() => {
+      geometryPreviewAnchorRef.current = geometryPreviewAnchor;
+      scheduleDraw();
+    }, [geometryPreviewAnchor]);
+
+    useEffect(() => {
       textCursorSizeRef.current = textCursorSize;
       scheduleDraw();
     }, [textCursorSize]);
@@ -868,6 +903,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       onStampRef.current = onStamp;
       onTextStartRef.current = onTextStart;
       onTextMoveRef.current = onTextMove;
+      onGeometryPreviewRef.current = onGeometryPreview;
+      onGeometryCommitRef.current = onGeometryCommit;
+      onGeometryCancelRef.current = onGeometryCancel;
+      onGeometryPointRef.current = onGeometryPoint;
+      onGeometryHoverRef.current = onGeometryHover;
       onSelectionChangeRef.current = onSelectionChange;
       onSelectionEndRef.current = onSelectionEnd;
       onPaintStartRef.current = onPaintStart;
@@ -882,7 +922,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         textCursorCellRef.current = null;
         scheduleDraw();
       }
-    }, [editTool, mode, onPaintEnd, onPaintStart, onPixelChange, onSelectionChange, onSelectionEnd, onStamp, onTextMove, onTextStart]);
+    }, [editTool, mode, onGeometryCancel, onGeometryCommit, onGeometryHover, onGeometryPoint, onGeometryPreview, onPaintEnd, onPaintStart, onPixelChange, onSelectionChange, onSelectionEnd, onStamp, onTextMove, onTextStart]);
 
     useEffect(() => {
       if (mode !== 'edit' || editTool !== 'text') {
@@ -987,6 +1027,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       const hadPreview = stampPreviewCellRef.current || textCursorCellRef.current;
       stampPreviewCellRef.current = null;
       textCursorCellRef.current = null;
+      if (editToolRef.current === 'polygon') onGeometryHoverRef.current(null);
       if (hadPreview) scheduleDraw();
     };
 
@@ -1024,15 +1065,19 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         touchPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
         if (touchPointersRef.current.size >= 2) {
           if (dragRef.current?.kind === 'paint') onPaintEndRef.current?.();
+          if (dragRef.current?.kind === 'geometry') onGeometryCancelRef.current();
           dragRef.current = null;
           beginTouchGesture();
           return;
         }
       }
 
-      const shouldPan = event.shiftKey || event.button === 1 || event.button === 2;
+      const shouldConstrainGeometry = modeRef.current === 'edit'
+        && isDragGeometryTool(editToolRef.current)
+        && event.shiftKey;
+      const shouldPan = (event.shiftKey && !shouldConstrainGeometry) || event.button === 1 || event.button === 2;
       const shouldRoll = event.altKey && !shouldPan;
-      let kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'text' | 'text-move' | 'stamp' | 'select' = shouldPan
+      let kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'text' | 'text-move' | 'stamp' | 'select' | 'geometry' | 'polygon' | 'fill' = shouldPan
         ? 'pan'
         : shouldRoll
           ? 'roll'
@@ -1048,6 +1093,12 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           kind = textAnchorRef.current ? 'text-move' : 'text';
         } else if (editToolRef.current === 'select') {
           kind = 'select';
+        } else if (isDragGeometryTool(editToolRef.current)) {
+          kind = 'geometry';
+        } else if (editToolRef.current === 'polygon') {
+          kind = 'polygon';
+        } else if (editToolRef.current === 'fill') {
+          kind = 'fill';
         } else {
           kind = 'paint';
           paintValue = bitmapRef.current[cell.row]?.[cell.column] === '1' ? 0 : 1;
@@ -1063,6 +1114,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         selectionAnchor: kind === 'select' ? cellAtPointer(event.clientX, event.clientY) ?? undefined : undefined,
         textDragCell: kind === 'text-move' ? cellAtPointer(event.clientX, event.clientY) ?? undefined : undefined,
         textDragAnchor: kind === 'text-move' ? textAnchorRef.current ?? undefined : undefined,
+        geometryAnchor: kind === 'geometry' ? cellAtPointer(event.clientX, event.clientY) ?? undefined : undefined,
+        geometryConstrain: kind === 'geometry' ? event.shiftKey : undefined,
       };
       if (kind === 'paint') {
         onPaintStartRef.current?.();
@@ -1078,6 +1131,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         dragRef.current.lastCell = 'started';
       } else if (kind === 'select' && dragRef.current.selectionAnchor) {
         updateSelection(dragRef.current.selectionAnchor, dragRef.current.selectionAnchor);
+      } else if (kind === 'geometry' && dragRef.current.geometryAnchor) {
+        onGeometryPreviewRef.current(dragRef.current.geometryAnchor, dragRef.current.geometryAnchor, event.shiftKey);
       }
     };
 
@@ -1085,6 +1140,9 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       if (event.pointerType !== 'touch') {
         updateStampPreview(event.clientX, event.clientY);
         updateTextPreview(event.clientX, event.clientY);
+        if (editToolRef.current === 'polygon' && !dragRef.current) {
+          onGeometryHoverRef.current(cellAtPointer(event.clientX, event.clientY));
+        }
       }
 
       if (event.pointerType === 'touch' && touchPointersRef.current.has(event.pointerId)) {
@@ -1161,6 +1219,12 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       } else if (drag.kind === 'select' && drag.selectionAnchor) {
         const cell = cellAtPointer(event.clientX, event.clientY);
         if (cell) updateSelection(drag.selectionAnchor, cell);
+      } else if (drag.kind === 'geometry' && drag.geometryAnchor) {
+        const cell = cellAtPointer(event.clientX, event.clientY);
+        if (cell) {
+          drag.geometryConstrain = event.shiftKey;
+          onGeometryPreviewRef.current(drag.geometryAnchor, cell, event.shiftKey);
+        }
       }
     };
 
@@ -1202,6 +1266,14 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       } else if (dragRef.current.kind === 'select' && dragRef.current.selectionAnchor && event.type === 'pointerup') {
         const cell = cellAtPointer(event.clientX, event.clientY);
         if (cell) onSelectionEndRef.current(selectionBetween(dragRef.current.selectionAnchor, cell));
+      } else if (dragRef.current.kind === 'geometry' && dragRef.current.geometryAnchor && event.type === 'pointerup') {
+        const cell = cellAtPointer(event.clientX, event.clientY);
+        if (cell) onGeometryCommitRef.current(dragRef.current.geometryAnchor, cell, dragRef.current.geometryConstrain ?? false);
+      } else if (dragRef.current.kind === 'geometry') {
+        onGeometryCancelRef.current();
+      } else if ((dragRef.current.kind === 'polygon' || dragRef.current.kind === 'fill') && event.type === 'pointerup') {
+        const cell = cellAtPointer(event.clientX, event.clientY);
+        if (cell) onGeometryPointRef.current(cell.row, cell.column);
       }
       dragRef.current = null;
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {

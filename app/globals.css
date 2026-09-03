@@ -385,7 +385,9 @@
 }
 
 .edit-tool-switch,
-.edit-history {
+.edit-history,
+.geometry-tool-switch,
+.fill-pattern-picker {
   display: flex;
   align-items: center;
   margin: 0;
@@ -412,6 +414,75 @@
 
 .edit-history {
   gap: 0.125rem;
+}
+
+.geometry-tool-switch {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.2rem;
+  padding: 0.15rem;
+  border-radius: 0.55rem;
+  background: #222824;
+}
+
+.geometry-tool-switch button {
+  display: grid;
+  justify-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+  height: auto;
+  padding: 0.4rem 0.15rem;
+  font-size: 0.62rem;
+}
+
+.geometry-tool-switch svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.fill-pattern-picker {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.pattern-choice {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.25rem 0.25rem 0.35rem;
+  border: 1px solid #3b443d;
+  border-radius: 0.5rem;
+  color: #aeb7ad;
+  background: #202522;
+  font-size: 0.64rem;
+  cursor: pointer;
+}
+
+.pattern-choice:hover,
+.pattern-choice:focus-visible {
+  border-color: #687269;
+  color: #eef2e9;
+}
+
+.pattern-choice[aria-pressed='true'] {
+  border-color: #d7ff45;
+  color: #eef2e9;
+}
+
+.pattern-choice svg {
+  display: block;
+  width: 100%;
+  border-radius: 0.3rem;
+}
+
+.polygon-actions {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 0.35rem;
+  color: #9da69d;
+  font-size: 0.72rem;
 }
 
 .sprite-library {
@@ -845,6 +916,8 @@
   .guide-callout,
   .sprite-choice,
   .font-choice,
+  .geometry-tool-switch button,
+  .pattern-choice,
   .text-size-value input,
   .preset-option,
   .toggle-control {

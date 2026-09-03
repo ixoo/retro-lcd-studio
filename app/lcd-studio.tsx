@@ -3,15 +3,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BoxSelect,
+  Circle,
   Download,
   FolderOpen,
   ImagePlus,
+  Minus,
   MousePointer2,
+  PaintBucket,
   Pencil,
+  Pentagon,
   Redo2,
   Rotate3D,
   RotateCcw,
   Settings2,
+  Square,
   Stamp,
   Type,
   Undo2,
@@ -21,6 +26,7 @@ import {
   LcdCanvas,
   type LcdAppearance,
   type LcdCanvasHandle,
+  type LcdEditTool,
   type LcdMode,
   type LcdSelection,
 } from '@/app/lcd-canvas';
@@ -147,7 +153,6 @@ const SPRITE_BITMAPS = [
 
 const CLIPBOARD_SPRITE_ID = 'clipboard';
 
-type EditTool = 'pen' | 'text' | 'stamp' | 'select';
 type PixelFontId =
   | 'terminal'
   | 'typewriter'
@@ -182,6 +187,18 @@ const PIXEL_FONTS: Array<{ id: PixelFontId; label: string; css: string; weight: 
 ];
 const MIN_TEXT_PIXEL_SIZE = 4;
 const MAX_TEXT_PIXEL_SIZE = 256;
+
+type Cell = { row: number; column: number };
+type GeometryTool = 'line' | 'rectangle' | 'ellipse';
+type FillPatternId = 'solid' | 'checker' | 'dots' | 'diagonal';
+type GeometryPreview = { rows: string[]; row: number; column: number };
+
+const FILL_PATTERNS: Array<{ id: FillPatternId; label: string; rows: string[] }> = [
+  { id: 'solid', label: 'Solid', rows: Array<string>(6).fill('111111') },
+  { id: 'checker', label: 'Checker', rows: ['101010', '010101', '101010', '010101', '101010', '010101'] },
+  { id: 'dots', label: 'Dots', rows: ['100100', '000000', '000000', '100100', '000000', '000000'] },
+  { id: 'diagonal', label: 'Diagonal', rows: ['100010', '000100', '001000', '010001', '100010', '000100'] },
+];
 
 const DEFAULT_APPEARANCE: LcdAppearance = {
   background: '#aeb5a7',
@@ -912,6 +929,119 @@ function loadPixelFont(fontId: PixelFontId, pixelSize = 16) {
   return document.fonts.load(`${font.weight} ${pixelSize}px ${font.css}`, 'Aa').then(() => undefined);
 }
 
+function lineCells(start: Cell, end: Cell) {
+  const cells: Cell[] = [];
+  let x = start.column;
+  let y = start.row;
+  const dx = Math.abs(end.column - start.column);
+  const sx = start.column < end.column ? 1 : -1;
+  const dy = -Math.abs(end.row - start.row);
+  const sy = start.row < end.row ? 1 : -1;
+  let error = dx + dy;
+  while (true) {
+    cells.push({ row: y, column: x });
+    if (x === end.column && y === end.row) break;
+    const doubled = error * 2;
+    if (doubled >= dy) {
+      error += dy;
+      x += sx;
+    }
+    if (doubled <= dx) {
+      error += dx;
+      y += sy;
+    }
+  }
+  return cells;
+}
+
+function constrainedGeometryEnd(tool: GeometryTool, start: Cell, end: Cell, constrain: boolean) {
+  if (!constrain) return end;
+  const dx = end.column - start.column;
+  const dy = end.row - start.row;
+  if (tool === 'line') {
+    if (Math.abs(dx) > Math.abs(dy) * 2) return { row: start.row, column: end.column };
+    if (Math.abs(dy) > Math.abs(dx) * 2) return { row: end.row, column: start.column };
+  }
+  const extent = Math.max(Math.abs(dx), Math.abs(dy));
+  return {
+    row: start.row + (dy < 0 ? -extent : extent),
+    column: start.column + (dx < 0 ? -extent : extent),
+  };
+}
+
+function geometryFromCells(cells: Cell[]): GeometryPreview | null {
+  if (cells.length === 0) return null;
+  const top = Math.min(...cells.map((cell) => cell.row));
+  const bottom = Math.max(...cells.map((cell) => cell.row));
+  const left = Math.min(...cells.map((cell) => cell.column));
+  const right = Math.max(...cells.map((cell) => cell.column));
+  const width = right - left + 1;
+  const height = bottom - top + 1;
+  if (width > MAX_BITMAP_DIMENSION || height > MAX_BITMAP_DIMENSION) return null;
+  const active = new Set(cells.map((cell) => `${cell.row}:${cell.column}`));
+  return {
+    row: top,
+    column: left,
+    rows: Array.from({ length: height }, (_, rowOffset) => (
+      Array.from({ length: width }, (_, columnOffset) => (
+        active.has(`${top + rowOffset}:${left + columnOffset}`) ? '1' : '0'
+      )).join('')
+    )),
+  };
+}
+
+function rasterizeGeometry(tool: GeometryTool, start: Cell, rawEnd: Cell, constrain: boolean) {
+  const end = constrainedGeometryEnd(tool, start, rawEnd, constrain);
+  if (tool === 'line') return geometryFromCells(lineCells(start, end));
+  const top = Math.min(start.row, end.row);
+  const bottom = Math.max(start.row, end.row);
+  const left = Math.min(start.column, end.column);
+  const right = Math.max(start.column, end.column);
+  if (left === right || top === bottom) return geometryFromCells(lineCells(start, end));
+  if (tool === 'rectangle') {
+    return geometryFromCells([
+      ...lineCells({ row: top, column: left }, { row: top, column: right }),
+      ...lineCells({ row: top, column: right }, { row: bottom, column: right }),
+      ...lineCells({ row: bottom, column: right }, { row: bottom, column: left }),
+      ...lineCells({ row: bottom, column: left }, { row: top, column: left }),
+    ]);
+  }
+
+  const centerX = (left + right) / 2;
+  const centerY = (top + bottom) / 2;
+  const radiusX = Math.max((right - left) / 2, 0.5);
+  const radiusY = Math.max((bottom - top) / 2, 0.5);
+  const steps = Math.max(16, Math.ceil(Math.PI * 4 * Math.max(radiusX, radiusY)));
+  const outline: Cell[] = [];
+  let previous: Cell | null = null;
+  for (let index = 0; index <= steps; index += 1) {
+    const angle = index / steps * Math.PI * 2;
+    const current = {
+      row: Math.round(centerY + Math.sin(angle) * radiusY),
+      column: Math.round(centerX + Math.cos(angle) * radiusX),
+    };
+    if (previous) outline.push(...lineCells(previous, current));
+    previous = current;
+  }
+  return geometryFromCells(outline);
+}
+
+function rasterizePolygon(points: Cell[], close: boolean) {
+  if (points.length === 0) return null;
+  const cells = points.length === 1 ? points : points.slice(1).flatMap((point, index) => (
+    lineCells(points[index], point)
+  ));
+  if (close && points.length > 2) cells.push(...lineCells(points.at(-1)!, points[0]));
+  return geometryFromCells(cells);
+}
+
+function patternValue(pattern: FillPatternId, row: number, column: number) {
+  if (pattern === 'solid') return '1';
+  if (pattern === 'checker') return (row + column) % 2 === 0 ? '1' : '0';
+  if (pattern === 'dots') return row % 3 === 0 && column % 3 === 0 ? '1' : '0';
+  return ((column - row) % 4 + 4) % 4 === 0 ? '1' : '0';
+}
+
 function overlayBitmapFrame(
   base: BitmapFrame,
   source: string[],
@@ -1020,7 +1150,7 @@ export function LcdStudio() {
   const textSessionRef = useRef<TextSession | null>(null);
 
   const [mode, setMode] = useState<LcdMode>('view');
-  const [editTool, setEditTool] = useState<EditTool>('pen');
+  const [editTool, setEditTool] = useState<LcdEditTool>('pen');
   const [selectedSpriteId, setSelectedSpriteId] = useState(CLIPBOARD_SPRITE_ID);
   const [selectedFontId, setSelectedFontId] = useState<PixelFontId>('terminal');
   const [textPixelSize, setTextPixelSize] = useState(12);
@@ -1029,6 +1159,9 @@ export function LcdStudio() {
   const [textAnchor, setTextAnchor] = useState<{ row: number; column: number } | null>(null);
   const [textCursorOffset, setTextCursorOffset] = useState({ row: 0, column: 0 });
   const [textCursorSize, setTextCursorSize] = useState<[number, number]>([8, 9]);
+  const [geometryPreview, setGeometryPreview] = useState<GeometryPreview | null>(null);
+  const [polygonPoints, setPolygonPoints] = useState<Cell[]>([]);
+  const [fillPattern, setFillPattern] = useState<FillPatternId>('solid');
   const [selection, setSelection] = useState<LcdSelection | null>(null);
   const [clipboardBitmap, setClipboardBitmap] = useState<string[] | null>(null);
   const [bitmap, setBitmap] = useState(INITIAL_BITMAP);
@@ -1040,13 +1173,14 @@ export function LcdStudio() {
   const [importingImage, setImportingImage] = useState(false);
   const [actionStatus, setActionStatus] = useState('Ready');
   const [hiddenGestureHintContext, setHiddenGestureHintContext] = useState<string | null>(null);
-  const gestureHintContext = `${mode}:${editTool}`;
+  const [gestureHintRevision, setGestureHintRevision] = useState(0);
+  const gestureHintContext = `${mode}:${editTool}:${gestureHintRevision}`;
   const showGestureHint = hiddenGestureHintContext !== gestureHintContext;
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setHiddenGestureHintContext(`${mode}:${editTool}`), 10_000);
+    const timeout = window.setTimeout(() => setHiddenGestureHintContext(`${mode}:${editTool}:${gestureHintRevision}`), 10_000);
     return () => window.clearTimeout(timeout);
-  }, [editTool, mode]);
+  }, [editTool, gestureHintRevision, mode]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -1067,12 +1201,18 @@ export function LcdStudio() {
 
   const chooseMode = useCallback((nextMode: LcdMode) => {
     if (nextMode !== 'edit') stopTextSession();
+    if (nextMode !== 'edit') {
+      setGeometryPreview(null);
+      setPolygonPoints([]);
+    }
     setMode(nextMode);
   }, [stopTextSession]);
 
-  const chooseEditTool = (nextTool: EditTool) => {
+  const chooseEditTool = (nextTool: LcdEditTool) => {
     if (nextTool !== 'text') stopTextSession();
     setSelection(null);
+    setGeometryPreview(null);
+    setPolygonPoints([]);
     setEditTool(nextTool);
   };
 
@@ -1094,6 +1234,114 @@ export function LcdStudio() {
     setBitmapOffsetCells(nextOffsetCells);
     return true;
   }, []);
+
+  const placeGeometry = useCallback((preview: GeometryPreview, label: string) => {
+    const current = { rows: bitmapRef.current, offsetCells: bitmapOffsetRef.current };
+    const next = overlayBitmapFrame(current, preview.rows, preview.row, preview.column);
+    if (!next) {
+      setActionStatus(`${label} exceeds the ${MAX_BITMAP_DIMENSION} × ${MAX_BITMAP_DIMENSION} technical limit`);
+      return false;
+    }
+    const changed = replaceBitmap(next.rows, true, next.offsetCells);
+    if (changed) setActionStatus(`${label} drawn`);
+    return changed;
+  }, [replaceBitmap]);
+
+  const previewGeometry = (start: Cell, end: Cell, constrain: boolean) => {
+    if (editTool !== 'line' && editTool !== 'rectangle' && editTool !== 'ellipse') return;
+    const preview = rasterizeGeometry(editTool, start, end, constrain);
+    setGeometryPreview(preview);
+    if (!preview) setActionStatus(`Shape exceeds the ${MAX_BITMAP_DIMENSION} × ${MAX_BITMAP_DIMENSION} technical limit`);
+  };
+
+  const commitGeometry = (start: Cell, end: Cell, constrain: boolean) => {
+    if (editTool !== 'line' && editTool !== 'rectangle' && editTool !== 'ellipse') return;
+    const preview = rasterizeGeometry(editTool, start, end, constrain);
+    setGeometryPreview(null);
+    if (preview) placeGeometry(preview, editTool === 'ellipse' ? 'Ellipse' : editTool[0].toUpperCase() + editTool.slice(1));
+  };
+
+  const cancelPolygon = useCallback(() => {
+    setPolygonPoints([]);
+    setGeometryPreview(null);
+  }, []);
+
+  const cancelGeometryPreview = useCallback(() => {
+    setGeometryPreview(null);
+  }, []);
+
+  const commitPolygon = useCallback(() => {
+    if (polygonPoints.length < 3) {
+      setActionStatus('A polygon needs at least 3 points');
+      return;
+    }
+    const preview = rasterizePolygon(polygonPoints, true);
+    if (preview) placeGeometry(preview, 'Polygon');
+    cancelPolygon();
+  }, [cancelPolygon, placeGeometry, polygonPoints]);
+
+  const fillAt = (row: number, column: number) => {
+    const current = bitmapRef.current;
+    const width = current[0].length;
+    const height = current.length;
+    if (row < 0 || column < 0 || row >= height || column >= width) {
+      setActionStatus('Pattern fill starts inside the current bitmap');
+      return;
+    }
+    const target = current[row][column];
+    const visited = new Uint8Array(width * height);
+    const region: number[] = [row * width + column];
+    visited[region[0]] = 1;
+    for (let cursor = 0; cursor < region.length; cursor += 1) {
+      if (region.length > 1_000_000) {
+        setActionStatus('Fill region is too large');
+        return;
+      }
+      const index = region[cursor];
+      const currentRow = Math.floor(index / width);
+      const neighbours = [index - width, index + width, index - 1, index + 1];
+      neighbours.forEach((nextIndex, direction) => {
+        if (nextIndex < 0 || nextIndex >= width * height || visited[nextIndex]) return;
+        const nextRow = Math.floor(nextIndex / width);
+        const nextColumn = nextIndex % width;
+        if (direction >= 2 && nextRow !== currentRow) return;
+        if (current[nextRow][nextColumn] !== target) return;
+        visited[nextIndex] = 1;
+        region.push(nextIndex);
+      });
+    }
+    const next = current.map((bitmapRow) => bitmapRow.split(''));
+    region.forEach((index) => {
+      const fillRow = Math.floor(index / width);
+      const fillColumn = index % width;
+      next[fillRow][fillColumn] = patternValue(fillPattern, fillRow, fillColumn);
+    });
+    const changed = replaceBitmap(next.map((bitmapRow) => bitmapRow.join('')), true);
+    setActionStatus(changed ? `${FILL_PATTERNS.find((pattern) => pattern.id === fillPattern)?.label} fill applied` : 'Region already matches pattern');
+  };
+
+  const addPolygonPoint = (row: number, column: number) => {
+    if (editTool === 'fill') {
+      fillAt(row, column);
+      return;
+    }
+    if (editTool !== 'polygon') return;
+    if (polygonPoints.length >= 3
+      && row === polygonPoints[0].row
+      && column === polygonPoints[0].column) {
+      commitPolygon();
+      return;
+    }
+    const nextPoints = [...polygonPoints, { row, column }];
+    setPolygonPoints(nextPoints);
+    setGeometryPreview(rasterizePolygon(nextPoints, false));
+    setActionStatus(`${nextPoints.length} point${nextPoints.length === 1 ? '' : 's'} · Enter closes polygon`);
+  };
+
+  const hoverPolygon = (cell: Cell | null) => {
+    if (editTool !== 'polygon' || polygonPoints.length === 0) return;
+    setGeometryPreview(rasterizePolygon(cell ? [...polygonPoints, cell] : polygonPoints, false));
+  };
 
   const setPixel = (row: number, column: number, value: 0 | 1) => {
     const current = bitmapRef.current;
@@ -1301,24 +1549,26 @@ export function LcdStudio() {
   const undo = useCallback(() => {
     if (past.length === 0) return;
     stopTextSession();
+    cancelPolygon();
     const previous = past.at(-1)!;
     const current = { rows: bitmapRef.current, offsetCells: bitmapOffsetRef.current };
     setPast((items) => items.slice(0, -1));
     setFuture((items) => [current, ...items].slice(0, 80));
     replaceBitmap(previous.rows, false, previous.offsetCells);
     setActionStatus('Undid edit');
-  }, [past, replaceBitmap, stopTextSession]);
+  }, [cancelPolygon, past, replaceBitmap, stopTextSession]);
 
   const redo = useCallback(() => {
     if (future.length === 0) return;
     stopTextSession();
+    cancelPolygon();
     const next = future[0];
     const current = { rows: bitmapRef.current, offsetCells: bitmapOffsetRef.current };
     setFuture((items) => items.slice(1));
     setPast((items) => [...items, current].slice(-80));
     replaceBitmap(next.rows, false, next.offsetCells);
     setActionStatus('Redid edit');
-  }, [future, replaceBitmap, stopTextSession]);
+  }, [cancelPolygon, future, replaceBitmap, stopTextSession]);
 
   const exportPng = async () => {
     setExporting(true);
@@ -1345,10 +1595,26 @@ export function LcdStudio() {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isTyping = target?.matches('textarea, input, [contenteditable="true"]');
+      const isGeometryTool = editTool === 'line' || editTool === 'rectangle' || editTool === 'ellipse' || editTool === 'polygon';
+      if (!event.repeat && mode === 'edit' && isGeometryTool
+        && (event.key === 'Shift' || event.key === 'Enter' || event.key === 'Escape')) {
+        setGestureHintRevision((revision) => revision + 1);
+      }
       if (event.key === 'Escape' && textSessionRef.current) {
         event.preventDefault();
         stopTextSession();
         setActionStatus('Text insertion cancelled');
+        return;
+      }
+      if (event.key === 'Escape' && editTool === 'polygon' && polygonPoints.length > 0) {
+        event.preventDefault();
+        cancelPolygon();
+        setActionStatus('Polygon cancelled');
+        return;
+      }
+      if (event.key === 'Enter' && editTool === 'polygon' && polygonPoints.length > 0) {
+        event.preventDefault();
+        commitPolygon();
         return;
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
@@ -1363,7 +1629,7 @@ export function LcdStudio() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [chooseMode, redo, stopTextSession, undo]);
+  }, [cancelPolygon, chooseMode, commitPolygon, editTool, mode, polygonPoints.length, redo, stopTextSession, undo]);
 
   const loadBitmapAction = useCallback(async (source: string) => {
     const parsed = parseBitmap(source);
@@ -1607,6 +1873,24 @@ export function LcdStudio() {
                   </fieldset>
                 </div>
 
+                <fieldset className="geometry-tool-switch" aria-label="Geometry tools">
+                  <Button type="button" size="sm" variant={editTool === 'line' ? 'default' : 'ghost'} aria-pressed={editTool === 'line'} onClick={() => chooseEditTool('line')} title="Line">
+                    <Minus /> <span>Line</span>
+                  </Button>
+                  <Button type="button" size="sm" variant={editTool === 'rectangle' ? 'default' : 'ghost'} aria-label="Rectangle" aria-pressed={editTool === 'rectangle'} onClick={() => chooseEditTool('rectangle')} title="Rectangle">
+                    <Square /> <span>Rect</span>
+                  </Button>
+                  <Button type="button" size="sm" variant={editTool === 'ellipse' ? 'default' : 'ghost'} aria-label="Ellipse" aria-pressed={editTool === 'ellipse'} onClick={() => chooseEditTool('ellipse')} title="Ellipse">
+                    <Circle /> <span>Ellipse</span>
+                  </Button>
+                  <Button type="button" size="sm" variant={editTool === 'polygon' ? 'default' : 'ghost'} aria-label="Polygon" aria-pressed={editTool === 'polygon'} onClick={() => chooseEditTool('polygon')} title="Polygon">
+                    <Pentagon /> <span>Poly</span>
+                  </Button>
+                  <Button type="button" size="sm" variant={editTool === 'fill' ? 'default' : 'ghost'} aria-label="Pattern fill" aria-pressed={editTool === 'fill'} onClick={() => chooseEditTool('fill')} title="Pattern fill">
+                    <PaintBucket /> <span>Fill</span>
+                  </Button>
+                </fieldset>
+
                 {editTool === 'text' && (
                   <div className="text-tool-panel">
                     <fieldset className="font-picker" aria-label="Pixel font">
@@ -1714,6 +1998,41 @@ export function LcdStudio() {
                     </div>
                   </div>
                 )}
+
+                {editTool === 'fill' && (
+                  <fieldset className="fill-pattern-picker" aria-label="Fill pattern">
+                    {FILL_PATTERNS.map((pattern) => (
+                      <button
+                        type="button"
+                        className="pattern-choice"
+                        key={pattern.id}
+                        aria-pressed={fillPattern === pattern.id}
+                        onClick={() => {
+                          setFillPattern(pattern.id);
+                          setActionStatus(`${pattern.label} pattern selected`);
+                        }}
+                      >
+                        <BitmapThumbnail rows={pattern.rows} background={appearance.background} pixel={appearance.pixel} inverted={false} />
+                        <span>{pattern.label}</span>
+                      </button>
+                    ))}
+                  </fieldset>
+                )}
+
+                {editTool === 'polygon' && polygonPoints.length > 0 && (
+                  <div className="polygon-actions">
+                    <span>{polygonPoints.length} point{polygonPoints.length === 1 ? '' : 's'}</span>
+                    <Button type="button" size="sm" variant="default" disabled={polygonPoints.length < 3} onClick={commitPolygon}>
+                      Close
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => {
+                      cancelPolygon();
+                      setActionStatus('Polygon cancelled');
+                    }}>
+                      Cancel
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -1816,6 +2135,9 @@ export function LcdStudio() {
           editTool={editTool}
           textCursorSize={textCursorSize}
           textAnchor={textAnchor}
+          geometryPreviewAnchor={geometryPreview
+            ? { row: geometryPreview.row, column: geometryPreview.column }
+            : null}
           textCursorAnchor={textAnchor
             ? {
                 row: textAnchor.row + textCursorOffset.row,
@@ -1824,6 +2146,8 @@ export function LcdStudio() {
             : null}
           stampBitmap={editTool === 'text'
             ? textPreviewBitmap
+            : geometryPreview
+              ? geometryPreview.rows
             : selectedSpriteId === CLIPBOARD_SPRITE_ID
               ? clipboardBitmap ?? ['0']
               : SPRITE_BITMAPS.find((sprite) => sprite.id === selectedSpriteId)?.rows ?? SPRITE_BITMAPS[0].rows}
@@ -1832,6 +2156,11 @@ export function LcdStudio() {
           onStamp={stampAt}
           onTextStart={beginTextAt}
           onTextMove={moveTextTo}
+          onGeometryPreview={previewGeometry}
+          onGeometryCommit={commitGeometry}
+          onGeometryCancel={cancelGeometryPreview}
+          onGeometryPoint={addPolygonPoint}
+          onGeometryHover={hoverPolygon}
           onSelectionChange={setSelection}
           onSelectionEnd={copySelectionToBuffer}
           onPaintStart={beginPaint}
@@ -1860,6 +2189,31 @@ export function LcdStudio() {
             <>
               <span className="mouse-gesture-hint"><strong>Click</strong> stamp · <strong>Shift</strong> pan · <strong>Option</strong> rotate · <strong>Scroll</strong> zoom</span>
               <span className="touch-gesture-hint"><strong>Tap</strong> stamp · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
+            </>
+          ) : editTool === 'line' ? (
+            <>
+              <span className="mouse-gesture-hint"><strong>Drag</strong> line · <strong>Shift</strong> snap</span>
+              <span className="touch-gesture-hint"><strong>Drag</strong> line · <strong>2 fingers</strong> navigate</span>
+            </>
+          ) : editTool === 'rectangle' ? (
+            <>
+              <span className="mouse-gesture-hint"><strong>Drag</strong> rectangle · <strong>Shift</strong> square</span>
+              <span className="touch-gesture-hint"><strong>Drag</strong> rectangle · <strong>2 fingers</strong> navigate</span>
+            </>
+          ) : editTool === 'ellipse' ? (
+            <>
+              <span className="mouse-gesture-hint"><strong>Drag</strong> ellipse · <strong>Shift</strong> circle</span>
+              <span className="touch-gesture-hint"><strong>Drag</strong> ellipse · <strong>2 fingers</strong> navigate</span>
+            </>
+          ) : editTool === 'polygon' ? (
+            <>
+              <span className="mouse-gesture-hint"><strong>Click</strong> points · <strong>Enter</strong> close · <strong>Esc</strong> cancel</span>
+              <span className="touch-gesture-hint"><strong>Tap</strong> points · tap first point or <strong>Close</strong></span>
+            </>
+          ) : editTool === 'fill' ? (
+            <>
+              <span className="mouse-gesture-hint"><strong>Click</strong> connected region to fill</span>
+              <span className="touch-gesture-hint"><strong>Tap</strong> connected region to fill</span>
             </>
           ) : (
             <>
