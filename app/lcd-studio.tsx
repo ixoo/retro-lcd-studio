@@ -242,7 +242,6 @@ export function LcdStudio() {
   const [appearance, setAppearance] = useState(DEFAULT_APPEARANCE);
   const [past, setPast] = useState<BitmapFrame[]>([]);
   const [future, setFuture] = useState<BitmapFrame[]>([]);
-  const [panelOpen, setPanelOpen] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [actionStatus, setActionStatus] = useState('Ready');
 
@@ -491,23 +490,10 @@ export function LcdStudio() {
         appearance={appearance}
       />
 
-      <div className="control-drawer" data-open={panelOpen}>
-        <button
-          type="button"
-          className="control-tab"
-          aria-label={panelOpen ? 'Close controls' : 'Open controls'}
-          aria-expanded={panelOpen}
-          aria-controls="controls-panel"
-          onClick={() => setPanelOpen((open) => !open)}
-        >
-          <span>Controls</span>
-        </button>
-
+      <div className="control-drawer">
         <aside
           id="controls-panel"
           className="controls-panel"
-          aria-hidden={!panelOpen}
-          inert={!panelOpen}
         >
           <div className="panel-heading">
             <h1>Controls</h1>
@@ -628,7 +614,7 @@ export function LcdStudio() {
         </aside>
       </div>
 
-      <div className="gesture-hint" aria-live="polite" data-panel-open={panelOpen}>
+      <div className="gesture-hint" aria-live="polite">
         <MousePointer2 aria-hidden="true" />
         {mode === 'view' ? (
           <span><strong>Drag</strong> to tilt · <strong>Shift-drag</strong> to pan · <strong>Scroll</strong> to zoom</span>
