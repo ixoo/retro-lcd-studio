@@ -10,6 +10,13 @@ import {
 
 export type LcdMode = 'view' | 'edit';
 
+export type LcdSelection = {
+  row: number;
+  column: number;
+  width: number;
+  height: number;
+};
+
 export type LcdAppearance = {
   background: string;
   pixel: string;
@@ -34,11 +41,14 @@ type LcdCanvasProps = {
   bitmap: string[];
   bitmapOffsetCells: [number, number];
   mode: LcdMode;
-  editTool: 'pen' | 'stamp';
+  editTool: 'pen' | 'stamp' | 'select' | 'paste';
   stampBitmap: string[];
+  selection: LcdSelection | null;
   appearance: LcdAppearance;
   onPixelChange: (row: number, column: number, value: 0 | 1) => void;
   onStamp: (row: number, column: number) => void;
+  onPaste: (row: number, column: number) => void;
+  onSelectionChange: (selection: LcdSelection) => void;
   onPaintStart?: () => void;
   onPaintEnd?: () => void;
 };
@@ -163,6 +173,7 @@ struct Uniforms {
   background: vec4<f32>,
   pixelColor: vec4<f32>,
   stampPreview: vec4<f32>,
+  selection: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -263,6 +274,24 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   let shadowDistance = activePixelDistance(local - uniforms.shadowOffsetMm);
   let stampDistance = stampPreviewDistance(local);
   let gridDistance = cellPixelDistance(gridCoordinates(local));
+  let selectionGrid = gridCoordinates(local);
+  let selectionOrigin = uniforms.selection.xy;
+  let selectionSize = uniforms.selection.zw;
+  let selectionEnd = selectionOrigin + selectionSize;
+  let insideSelection = selectionSize.x > 0.0 && selectionSize.y > 0.0
+    && selectionGrid.x >= selectionOrigin.x && selectionGrid.y >= selectionOrigin.y
+    && selectionGrid.x <= selectionEnd.x && selectionGrid.y <= selectionEnd.y;
+  let selectionEdgeDistance = min(
+    min(selectionGrid.x - selectionOrigin.x, selectionEnd.x - selectionGrid.x),
+    min(selectionGrid.y - selectionOrigin.y, selectionEnd.y - selectionGrid.y)
+  );
+  let selectionAntialias = max(fwidth(selectionGrid.x), fwidth(selectionGrid.y));
+  let selectionBorder = select(
+    0.0,
+    1.0 - smoothstep(0.0, selectionAntialias * 1.8, selectionEdgeDistance),
+    insideSelection
+  );
+  let selectionFill = select(0.0, 0.055, insideSelection);
   let pixelCoverage = 1.0 - smoothstep(-antialias, antialias, pixelDistance);
   let stampCoverage = 1.0 - smoothstep(-antialias, antialias, stampDistance);
   let shadowFeather = max(uniforms.geometryMm.w, antialias);
@@ -285,6 +314,8 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
     stampTarget = uniforms.background.rgb;
   }
   color = mix(color, stampTarget, stampCoverage * 0.42);
+  let selectionColor = vec3<f32>(0.84, 1.0, 0.27);
+  color = mix(color, selectionColor, selectionFill + selectionBorder * 0.72);
   return vec4<f32>(color, 1.0);
 }
 `;
@@ -345,9 +376,12 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       mode,
       editTool,
       stampBitmap,
+      selection,
       appearance,
       onPixelChange,
       onStamp,
+      onPaste,
+      onSelectionChange,
       onPaintStart,
       onPaintEnd,
     },
@@ -357,10 +391,13 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const runtimeRef = useRef<GpuRuntime | null>(null);
     const bitmapRef = useRef(bitmap);
     const stampBitmapRef = useRef(stampBitmap);
+    const selectionRef = useRef(selection);
     const bitmapOffsetRef = useRef(bitmapOffsetCells);
     const appearanceRef = useRef(appearance);
     const onPixelChangeRef = useRef(onPixelChange);
     const onStampRef = useRef(onStamp);
+    const onPasteRef = useRef(onPaste);
+    const onSelectionChangeRef = useRef(onSelectionChange);
     const onPaintStartRef = useRef(onPaintStart);
     const onPaintEndRef = useRef(onPaintEnd);
     const modeRef = useRef(mode);
@@ -379,11 +416,12 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     });
     const dragRef = useRef<null | {
       pointerId: number;
-      kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'stamp';
+      kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'stamp' | 'paste' | 'select';
       x: number;
       y: number;
       paintValue?: 0 | 1;
       lastCell?: string;
+      selectionAnchor?: { row: number; column: number };
     }>(null);
     const touchPointersRef = useRef(new Map<number, { x: number; y: number }>());
     const touchGestureRef = useRef<null | {
@@ -508,7 +546,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           const pipelineError = await device.popErrorScope();
           if (pipelineError) throw new Error(pipelineError.message);
           const uniformBuffer = device.createBuffer({
-            size: 128,
+            size: 144,
             usage: 0x40 | 0x08,
           });
 
@@ -627,6 +665,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
                     stampHeight,
                   ]
                 : [0, 0, 0, 0];
+              const currentSelection = selectionRef.current;
+              const selectionValues = currentSelection
+                ? [currentSelection.column, currentSelection.row, currentSelection.width, currentSelection.height]
+                : [0, 0, 0, 0];
               background[3] = (appearanceRef.current.inverted ? 1 : 0)
                 + (appearanceRef.current.gridVisible ? 2 : 0);
               const values = new Float32Array([
@@ -638,6 +680,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
                 ...background,
                 ...pixel,
                 ...stampPreview,
+                ...selectionValues,
               ]);
               device.queue.writeBuffer(uniformBuffer, 0, values);
 
@@ -708,6 +751,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     }, [bitmapOffsetCells]);
 
     useEffect(() => {
+      selectionRef.current = selection;
+      scheduleDraw();
+    }, [selection]);
+
+    useEffect(() => {
       appearanceRef.current = appearance;
       scheduleDraw();
     }, [appearance]);
@@ -715,15 +763,17 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     useEffect(() => {
       onPixelChangeRef.current = onPixelChange;
       onStampRef.current = onStamp;
+      onPasteRef.current = onPaste;
+      onSelectionChangeRef.current = onSelectionChange;
       onPaintStartRef.current = onPaintStart;
       onPaintEndRef.current = onPaintEnd;
       modeRef.current = mode;
       editToolRef.current = editTool;
-      if (mode !== 'edit' || editTool !== 'stamp') {
+      if (mode !== 'edit' || (editTool !== 'stamp' && editTool !== 'paste')) {
         stampPreviewCellRef.current = null;
         scheduleDraw();
       }
-    }, [editTool, mode, onPaintEnd, onPaintStart, onPixelChange, onStamp]);
+    }, [editTool, mode, onPaintEnd, onPaintStart, onPaste, onPixelChange, onSelectionChange, onStamp]);
 
     const cellAtPointer = (clientX: number, clientY: number) => {
       const canvas = canvasRef.current;
@@ -754,23 +804,41 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       onPixelChangeRef.current(cell.row, cell.column, drag.paintValue);
     };
 
-    const stampAtPointer = (clientX: number, clientY: number) => {
+    const placeAtPointer = (clientX: number, clientY: number) => {
       const drag = dragRef.current;
-      if (!drag || drag.kind !== 'stamp' || drag.lastCell) return;
+      if (!drag || (drag.kind !== 'stamp' && drag.kind !== 'paste') || drag.lastCell) return;
       const cell = cellAtPointer(clientX, clientY);
       if (!cell) return;
       drag.lastCell = `${cell.row}:${cell.column}`;
-      onStampRef.current(cell.row, cell.column);
+      if (drag.kind === 'paste') {
+        onPasteRef.current(cell.row, cell.column);
+      } else {
+        onStampRef.current(cell.row, cell.column);
+      }
+      stampPreviewCellRef.current = null;
+      scheduleDraw();
     };
 
     const updateStampPreview = (clientX: number, clientY: number) => {
-      if (modeRef.current !== 'edit' || editToolRef.current !== 'stamp') return;
+      if (modeRef.current !== 'edit'
+        || (editToolRef.current !== 'stamp' && editToolRef.current !== 'paste')) return;
       const cell = cellAtPointer(clientX, clientY);
       if (!cell) return;
       const previous = stampPreviewCellRef.current;
       if (previous?.row === cell.row && previous.column === cell.column) return;
       stampPreviewCellRef.current = cell;
       scheduleDraw();
+    };
+
+    const updateSelection = (anchor: { row: number; column: number }, cell: { row: number; column: number }) => {
+      const row = Math.min(anchor.row, cell.row);
+      const column = Math.min(anchor.column, cell.column);
+      onSelectionChangeRef.current({
+        row,
+        column,
+        width: Math.abs(cell.column - anchor.column) + 1,
+        height: Math.abs(cell.row - anchor.row) + 1,
+      });
     };
 
     const clearStampPreview = () => {
@@ -821,7 +889,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
 
       const shouldPan = event.shiftKey || event.button === 1 || event.button === 2;
       const shouldRoll = event.altKey && !shouldPan;
-      let kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'stamp' = shouldPan
+      let kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'stamp' | 'paste' | 'select' = shouldPan
         ? 'pan'
         : shouldRoll
           ? 'roll'
@@ -831,8 +899,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       if (modeRef.current === 'edit' && !shouldPan && !shouldRoll) {
         const cell = cellAtPointer(event.clientX, event.clientY);
         if (!cell) return;
-        if (editToolRef.current === 'stamp') {
-          kind = 'stamp';
+        if (editToolRef.current === 'stamp' || editToolRef.current === 'paste') {
+          kind = editToolRef.current;
+        } else if (editToolRef.current === 'select') {
+          kind = 'select';
         } else {
           kind = 'paint';
           paintValue = bitmapRef.current[cell.row]?.[cell.column] === '1' ? 0 : 1;
@@ -845,6 +915,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         x: event.clientX,
         y: event.clientY,
         paintValue,
+        selectionAnchor: kind === 'select' ? cellAtPointer(event.clientX, event.clientY) ?? undefined : undefined,
       };
       if (kind === 'paint') {
         onPaintStartRef.current?.();
@@ -853,8 +924,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         if (event.pointerType !== 'touch') {
           paintAtPointer(event.clientX, event.clientY);
         }
-      } else if (kind === 'stamp' && event.pointerType !== 'touch') {
-        stampAtPointer(event.clientX, event.clientY);
+      } else if ((kind === 'stamp' || kind === 'paste') && event.pointerType !== 'touch') {
+        placeAtPointer(event.clientX, event.clientY);
+      } else if (kind === 'select' && dragRef.current.selectionAnchor) {
+        updateSelection(dragRef.current.selectionAnchor, dragRef.current.selectionAnchor);
       }
     };
 
@@ -922,6 +995,9 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         scheduleDraw();
       } else if (drag.kind === 'paint') {
         paintAtPointer(event.clientX, event.clientY);
+      } else if (drag.kind === 'select' && drag.selectionAnchor) {
+        const cell = cellAtPointer(event.clientX, event.clientY);
+        if (cell) updateSelection(drag.selectionAnchor, cell);
       }
     };
 
@@ -954,9 +1030,9 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           paintAtPointer(event.clientX, event.clientY);
         }
         onPaintEndRef.current?.();
-      } else if (dragRef.current.kind === 'stamp') {
+      } else if (dragRef.current.kind === 'stamp' || dragRef.current.kind === 'paste') {
         if (!dragRef.current.lastCell && event.type === 'pointerup') {
-          stampAtPointer(event.clientX, event.clientY);
+          placeAtPointer(event.clientX, event.clientY);
         }
       }
       dragRef.current = null;

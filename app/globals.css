@@ -122,6 +122,14 @@
   cursor: copy;
 }
 
+.lcd-canvas-wrap[data-mode='edit'][data-edit-tool='paste'] .lcd-canvas {
+  cursor: copy;
+}
+
+.lcd-canvas-wrap[data-mode='edit'][data-edit-tool='select'] .lcd-canvas {
+  cursor: cell;
+}
+
 .lcd-canvas:active {
   cursor: grabbing;
 }
@@ -345,6 +353,12 @@
 
 .edit-history {
   gap: 0.125rem;
+}
+
+.selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .sprite-library {
