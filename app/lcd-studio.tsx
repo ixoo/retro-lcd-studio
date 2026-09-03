@@ -166,19 +166,19 @@ type PixelFontId =
 
 const PIXEL_FONTS: Array<{ id: PixelFontId; label: string; css: string; weight: number }> = [
   { id: 'terminal', label: 'Terminal', css: 'ui-monospace, SFMono-Regular, Menlo, monospace', weight: 700 },
-  { id: 'typewriter', label: 'Typewriter', css: 'Courier New, Courier, monospace', weight: 700 },
-  { id: 'block', label: 'Block', css: 'Arial Black, Arial, sans-serif', weight: 900 },
-  { id: 'rounded', label: 'Rounded', css: 'Trebuchet MS, Arial, sans-serif', weight: 700 },
-  { id: 'narrow', label: 'Narrow', css: 'Arial Narrow, Helvetica Neue, sans-serif', weight: 700 },
-  { id: 'serif', label: 'Serif', css: 'Georgia, Times New Roman, serif', weight: 700 },
+  { id: 'typewriter', label: 'Typewriter', css: '"Courier New", Courier, monospace', weight: 700 },
+  { id: 'block', label: 'Block', css: '"Arial Black", Arial, sans-serif', weight: 900 },
+  { id: 'rounded', label: 'Rounded', css: '"Trebuchet MS", Arial, sans-serif', weight: 700 },
+  { id: 'narrow', label: 'Narrow', css: '"Arial Narrow", "Helvetica Neue", sans-serif', weight: 700 },
+  { id: 'serif', label: 'Serif', css: 'Georgia, "Times New Roman", serif', weight: 700 },
   { id: 'silkscreen', label: 'Silkscreen', css: 'Silkscreen, monospace', weight: 400 },
   { id: 'tiny', label: 'Tiny', css: 'Tiny5, monospace', weight: 400 },
-  { id: 'pixelify', label: 'Pixelify', css: 'Pixelify Sans, sans-serif', weight: 700 },
-  { id: 'jersey', label: 'Jersey', css: 'Jersey 10, sans-serif', weight: 400 },
-  { id: 'micro', label: 'Micro', css: 'Micro 5, monospace', weight: 400 },
-  { id: 'arcade', label: 'Arcade', css: 'Press Start 2P, monospace', weight: 400 },
+  { id: 'pixelify', label: 'Pixelify', css: '"Pixelify Sans", sans-serif', weight: 700 },
+  { id: 'jersey', label: 'Jersey', css: '"Jersey 10", sans-serif', weight: 400 },
+  { id: 'micro', label: 'Micro', css: '"Micro 5", monospace', weight: 400 },
+  { id: 'arcade', label: 'Arcade', css: '"Press Start 2P", monospace', weight: 400 },
   { id: 'dot', label: 'Dot', css: 'DotGothic16, sans-serif', weight: 400 },
-  { id: 'jacquard', label: 'Jacquard', css: 'Jacquard 12, serif', weight: 400 },
+  { id: 'jacquard', label: 'Jacquard', css: '"Jacquard 12", serif', weight: 400 },
 ];
 const TEXT_PIXEL_SIZES = [6, 8, 10, 12, 16, 20, 24] as const;
 
