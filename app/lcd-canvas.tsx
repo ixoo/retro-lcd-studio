@@ -242,8 +242,8 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   let gridVisible = (appearanceFlags & 2u) != 0u;
   let minimumPixelSize = min(uniforms.geometryMm.x, uniforms.geometryMm.y);
   let gridFade = 1.0 - smoothstep(minimumPixelSize * 0.25, minimumPixelSize * 0.55, footprint);
-  let gridCoverage = (1.0 - smoothstep(antialias, antialias * 2.2, abs(gridDistance)))
-    * gridFade * select(0.0, 0.18, gridVisible);
+  let gridCoverage = (1.0 - smoothstep(0.0, antialias * 0.9, abs(gridDistance)))
+    * gridFade * select(0.0, 0.07, gridVisible);
 
   var color = mix(uniforms.background.rgb, uniforms.pixelColor.rgb, gridCoverage);
   color = mix(color, vec3<f32>(0.0), shadowCoverage);
