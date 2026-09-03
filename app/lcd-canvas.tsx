@@ -318,15 +318,14 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
     selectedPixelValue == 0u,
     isInverted
   );
-  var selectionColor = mix(
+  let selectionColor = mix(
     uniforms.background.rgb,
     uniforms.pixelColor.rgb,
     0.46
   );
-  if (selectedPixelWasOn) {
-    selectionColor = uniforms.background.rgb;
-  }
-  color = mix(color, selectionColor, selectionCoverage * 0.92);
+  let selectedPixelCoverage = selectionCoverage
+    * select(0.0, 1.0, selectedPixelWasOn);
+  color = mix(color, selectionColor, selectedPixelCoverage * 0.92);
   return vec4<f32>(color, 1.0);
 }
 `;
