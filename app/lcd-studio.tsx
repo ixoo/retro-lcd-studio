@@ -10,7 +10,6 @@ import {
   RotateCcw,
   Settings2,
   Undo2,
-  X,
 } from 'lucide-react';
 
 import {
@@ -531,113 +530,109 @@ export function LcdStudio() {
         </Button>
       </header>
 
-      <button
-        type="button"
-        className="appearance-tab"
-        data-panel-open={panelOpen}
-        aria-expanded={panelOpen}
-        aria-controls="settings-panel"
-        aria-hidden={panelOpen}
-        tabIndex={panelOpen ? -1 : 0}
-        onClick={() => setPanelOpen(true)}
-      >
-        Appearance
-      </button>
-
       <aside className="surface-readout" aria-label="Virtual LCD surface">
         <span>MONO</span>
         <strong>VIRTUAL ∞</strong>
         <i aria-hidden="true" />
       </aside>
 
-      <aside
-        id="settings-panel"
-        className="settings-panel"
-        data-open={panelOpen}
-        aria-hidden={!panelOpen}
-        inert={!panelOpen}
-      >
-        <div className="panel-heading">
-          <h1>Appearance</h1>
-          <Button type="button" size="icon-sm" variant="ghost" aria-label="Close appearance" onClick={() => setPanelOpen(false)}>
-            <X />
-          </Button>
-        </div>
+      <div className="appearance-drawer" data-open={panelOpen}>
+        <button
+          type="button"
+          className="appearance-tab"
+          aria-label={panelOpen ? 'Close appearance' : 'Open appearance'}
+          aria-expanded={panelOpen}
+          aria-controls="settings-panel"
+          onClick={() => setPanelOpen((open) => !open)}
+        >
+          <span>Appearance</span>
+        </button>
 
-        <div className="panel-section appearance-section">
-          <section className="control-group" aria-labelledby="palette-heading">
-            <h2 id="palette-heading">Palette</h2>
-            <div className="preset-block">
-              <RadioGroup
-                className="preset-grid"
-                value={activeColorPreset?.id ?? ''}
-                aria-label="LCD color preset"
-                onValueChange={applyColorPreset}
-              >
-                {LCD_COLOR_PRESETS.map((preset) => (
-                  <div className="preset-option" key={preset.id}>
-                    <RadioGroupItem
-                      className="preset-radio"
-                      value={preset.id}
-                      aria-label={preset.label}
-                    />
-                    <span
-                      className="preset-swatch"
-                      style={{ backgroundColor: preset.background }}
-                      aria-hidden="true"
-                    >
-                      <i style={{ backgroundColor: preset.pixel }} />
-                      <i style={{ backgroundColor: preset.pixel }} />
-                      <i style={{ backgroundColor: preset.pixel }} />
-                    </span>
-                    <strong>{preset.label}</strong>
-                  </div>
-                ))}
-              </RadioGroup>
-            </div>
+        <aside
+          id="settings-panel"
+          className="settings-panel"
+          aria-hidden={!panelOpen}
+          inert={!panelOpen}
+        >
+          <div className="panel-heading">
+            <h1>Appearance</h1>
+          </div>
 
-            <div className="color-controls">
-              <ColorControl label="Pixel" value={appearance.pixel} onChange={(pixel) => setAppearance((current) => ({ ...current, pixel }))} />
-              <ColorControl label="Surface" value={appearance.background} onChange={(background) => setAppearance((current) => ({ ...current, background }))} />
-            </div>
+          <div className="panel-section appearance-section">
+            <section className="control-group" aria-labelledby="palette-heading">
+              <h2 id="palette-heading">Palette</h2>
+              <div className="preset-block">
+                <RadioGroup
+                  className="preset-grid"
+                  value={activeColorPreset?.id ?? ''}
+                  aria-label="LCD color preset"
+                  onValueChange={applyColorPreset}
+                >
+                  {LCD_COLOR_PRESETS.map((preset) => (
+                    <div className="preset-option" key={preset.id}>
+                      <RadioGroupItem
+                        className="preset-radio"
+                        value={preset.id}
+                        aria-label={preset.label}
+                      />
+                      <span
+                        className="preset-swatch"
+                        style={{ backgroundColor: preset.background }}
+                        aria-hidden="true"
+                      >
+                        <i style={{ backgroundColor: preset.pixel }} />
+                        <i style={{ backgroundColor: preset.pixel }} />
+                        <i style={{ backgroundColor: preset.pixel }} />
+                      </span>
+                      <strong>{preset.label}</strong>
+                    </div>
+                  ))}
+                </RadioGroup>
+              </div>
 
-            <div className="toggle-control">
-              <label htmlFor="inverted-rendering">Invert pixels</label>
-              <Switch
-                id="inverted-rendering"
-                checked={appearance.inverted}
-                aria-label="Invert pixels"
-                onCheckedChange={setInvertedRendering}
-              />
-            </div>
-          </section>
+              <div className="color-controls">
+                <ColorControl label="Pixel" value={appearance.pixel} onChange={(pixel) => setAppearance((current) => ({ ...current, pixel }))} />
+                <ColorControl label="Surface" value={appearance.background} onChange={(background) => setAppearance((current) => ({ ...current, background }))} />
+              </div>
 
-          <section className="control-group" aria-labelledby="geometry-heading">
-            <h2 id="geometry-heading">Pixel geometry</h2>
-            <ControlSlider label="Width" value={appearance.pixelWidthMm} formattedValue={formatMillimetres(appearance.pixelWidthMm)} min={0.25} max={5} step={0.05} onChange={(pixelWidthMm) => setAppearance((current) => ({ ...current, pixelWidthMm }))} />
-            <ControlSlider label="Height" value={appearance.pixelHeightMm} formattedValue={formatMillimetres(appearance.pixelHeightMm)} min={0.25} max={5} step={0.05} onChange={(pixelHeightMm) => setAppearance((current) => ({ ...current, pixelHeightMm }))} />
-            <ControlSlider label="Gap" value={appearance.gapMm} formattedValue={formatMillimetres(appearance.gapMm)} min={0} max={1} step={0.01} onChange={(gapMm) => setAppearance((current) => ({ ...current, gapMm }))} />
-            <div className="derived-value">
-              <span>Pitch</span>
-              <output>{formatMillimetreDimensions(appearance.pixelWidthMm + appearance.gapMm, appearance.pixelHeightMm + appearance.gapMm)}</output>
-            </div>
-          </section>
+              <div className="toggle-control">
+                <label htmlFor="inverted-rendering">Invert pixels</label>
+                <Switch
+                  id="inverted-rendering"
+                  checked={appearance.inverted}
+                  aria-label="Invert pixels"
+                  onCheckedChange={setInvertedRendering}
+                />
+              </div>
+            </section>
 
-          <section className="control-group" aria-labelledby="shadow-heading">
-            <h2 id="shadow-heading">Shadow</h2>
-            <ControlSlider label="X offset" value={appearance.shadowOffsetMm[0]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[0])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [value, current.shadowOffsetMm[1]] }))} />
-            <ControlSlider label="Y offset" value={appearance.shadowOffsetMm[1]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[1])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [current.shadowOffsetMm[0], value] }))} />
-            <ControlSlider label="Softness" value={appearance.shadowSoftnessMm} formattedValue={formatMillimetres(appearance.shadowSoftnessMm)} min={0} max={1} step={0.01} onChange={(shadowSoftnessMm) => setAppearance((current) => ({ ...current, shadowSoftnessMm }))} />
-            <ControlSlider label="Opacity" value={appearance.shadowOpacity} formattedValue={`${Math.round(appearance.shadowOpacity * 100)}%`} min={0} max={0.6} step={0.01} onChange={(shadowOpacity) => setAppearance((current) => ({ ...current, shadowOpacity }))} />
-          </section>
+            <section className="control-group" aria-labelledby="geometry-heading">
+              <h2 id="geometry-heading">Pixel geometry</h2>
+              <ControlSlider label="Width" value={appearance.pixelWidthMm} formattedValue={formatMillimetres(appearance.pixelWidthMm)} min={0.25} max={5} step={0.05} onChange={(pixelWidthMm) => setAppearance((current) => ({ ...current, pixelWidthMm }))} />
+              <ControlSlider label="Height" value={appearance.pixelHeightMm} formattedValue={formatMillimetres(appearance.pixelHeightMm)} min={0.25} max={5} step={0.05} onChange={(pixelHeightMm) => setAppearance((current) => ({ ...current, pixelHeightMm }))} />
+              <ControlSlider label="Gap" value={appearance.gapMm} formattedValue={formatMillimetres(appearance.gapMm)} min={0} max={1} step={0.01} onChange={(gapMm) => setAppearance((current) => ({ ...current, gapMm }))} />
+              <div className="derived-value">
+                <span>Pitch</span>
+                <output>{formatMillimetreDimensions(appearance.pixelWidthMm + appearance.gapMm, appearance.pixelHeightMm + appearance.gapMm)}</output>
+              </div>
+            </section>
 
-          <Button type="button" variant="outline" className="reset-appearance" onClick={() => setAppearance(DEFAULT_APPEARANCE)}>
-            <Settings2 data-icon="inline-start" /> Reset
-          </Button>
-        </div>
+            <section className="control-group" aria-labelledby="shadow-heading">
+              <h2 id="shadow-heading">Shadow</h2>
+              <ControlSlider label="X offset" value={appearance.shadowOffsetMm[0]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[0])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [value, current.shadowOffsetMm[1]] }))} />
+              <ControlSlider label="Y offset" value={appearance.shadowOffsetMm[1]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[1])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [current.shadowOffsetMm[0], value] }))} />
+              <ControlSlider label="Softness" value={appearance.shadowSoftnessMm} formattedValue={formatMillimetres(appearance.shadowSoftnessMm)} min={0} max={1} step={0.01} onChange={(shadowSoftnessMm) => setAppearance((current) => ({ ...current, shadowSoftnessMm }))} />
+              <ControlSlider label="Opacity" value={appearance.shadowOpacity} formattedValue={`${Math.round(appearance.shadowOpacity * 100)}%`} min={0} max={0.6} step={0.01} onChange={(shadowOpacity) => setAppearance((current) => ({ ...current, shadowOpacity }))} />
+            </section>
 
-        <output className="status-announcer" aria-live="polite">{actionStatus}</output>
-      </aside>
+            <Button type="button" variant="outline" className="reset-appearance" onClick={() => setAppearance(DEFAULT_APPEARANCE)}>
+              <Settings2 data-icon="inline-start" /> Reset
+            </Button>
+          </div>
+
+          <output className="status-announcer" aria-live="polite">{actionStatus}</output>
+        </aside>
+      </div>
 
       <div className="gesture-hint" aria-live="polite" data-panel-open={panelOpen}>
         <MousePointer2 aria-hidden="true" />

@@ -147,15 +147,31 @@
   background: #222824;
 }
 
-.appearance-tab {
+.appearance-drawer {
   position: absolute;
   z-index: 3;
-  top: 1rem;
+  top: 0;
   right: 0;
+  bottom: 0;
+  width: min(21.5rem, calc(100% - 2.75rem));
+  transform: translateX(100%);
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.appearance-drawer[data-open='true'] {
+  transform: translateX(0);
+}
+
+.appearance-tab {
+  position: absolute;
+  top: 50%;
+  right: 100%;
   display: flex;
-  height: 2.75rem;
+  width: 2.75rem;
+  height: 7.5rem;
   align-items: center;
-  padding: 0 0.9rem;
+  justify-content: center;
+  padding: 0;
   border: 1px solid #39413b;
   border-right: 0;
   border-radius: 0.65rem 0 0 0.65rem;
@@ -165,7 +181,13 @@
   font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
-  transition: color 140ms ease, background 140ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 140ms ease;
+  transform: translateY(-50%);
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.appearance-tab span {
+  transform: rotate(-90deg);
+  white-space: nowrap;
 }
 
 .appearance-tab:hover {
@@ -176,12 +198,6 @@
 .appearance-tab:focus-visible {
   outline: 2px solid #d7ff45;
   outline-offset: 2px;
-}
-
-.appearance-tab[data-panel-open='true'] {
-  transform: translateX(100%);
-  opacity: 0;
-  pointer-events: none;
 }
 
 .surface-readout {
@@ -205,29 +221,23 @@
 
 .settings-panel {
   position: absolute;
-  z-index: 3;
-  top: 1rem;
-  right: 1rem;
+  inset: 0;
   display: flex;
-  width: min(21.5rem, calc(100% - 2rem));
-  max-height: calc(100% - 2rem);
   overflow: hidden;
   flex-direction: column;
   border: 1px solid #39413b;
-  border-radius: 0.9rem;
+  border-right: 0;
+  border-radius: 0.9rem 0 0 0.9rem;
   color: #eef2e9;
   background: #171b19;
-  box-shadow: 0 18px 48px rgb(17 21 18 / 22%);
-  transform: translateX(calc(100% + 1.5rem));
-  opacity: 0;
-  pointer-events: none;
-  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms ease;
 }
 
-.settings-panel[data-open='true'] {
-  transform: translateX(0);
-  opacity: 1;
-  pointer-events: auto;
+.appearance-drawer[data-open='false'] .settings-panel {
+  pointer-events: none;
+}
+
+.appearance-drawer[data-open='true'] .settings-panel {
+  box-shadow: 0 18px 48px rgb(17 21 18 / 22%);
 }
 
 .panel-heading {
@@ -554,17 +564,6 @@
     display: none;
   }
 
-  .appearance-tab {
-    top: 5.35rem;
-  }
-
-  .settings-panel {
-    top: 5.35rem;
-    right: 0.75rem;
-    bottom: 0.75rem;
-    width: min(21.5rem, calc(100% - 1.5rem));
-    max-height: none;
-  }
 }
 
 @media (max-width: 500px) {
@@ -582,10 +581,6 @@
     padding: 0;
   }
 
-  .settings-panel {
-    left: 0.75rem;
-    width: auto;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
