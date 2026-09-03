@@ -141,6 +141,8 @@ type GpuRuntime = {
 };
 
 const MAX_TILT_RADIANS = 1.38;
+const MIN_ZOOM = 0.01;
+const MAX_ZOOM = 180;
 
 const SHADER = /* wgsl */ `
 struct Uniforms {
@@ -376,7 +378,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       const zoom = clamp(Math.min(
         (bounds.width - horizontalPadding) / (width * pitchXMm),
         (bounds.height - verticalPadding) / (height * pitchYMm),
-      ) * 0.82, 8, 180);
+      ) * 0.82, MIN_ZOOM, MAX_ZOOM);
       cameraRef.current = {
         yaw: 0,
         pitch: 0,
@@ -743,8 +745,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           const camera = cameraRef.current;
           const nextZoom = clamp(
             gesture.initialZoom * distance / gesture.initialDistance,
-            8,
-            180,
+            MIN_ZOOM,
+            MAX_ZOOM,
           );
 
           camera.zoom = nextZoom;
@@ -833,7 +835,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       const projection = inverseProjection(camera);
       const localX = (projection.inv00 * (screenX - camera.panX) + projection.inv01 * (screenY - camera.panY)) / camera.zoom;
       const localY = (projection.inv10 * (screenX - camera.panX) + projection.inv11 * (screenY - camera.panY)) / camera.zoom;
-      const nextZoom = clamp(camera.zoom * Math.exp(-event.deltaY * 0.0012), 8, 180);
+      const nextZoom = clamp(
+        camera.zoom * Math.exp(-event.deltaY * 0.0012),
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
       camera.panX = screenX - nextZoom * (projection.m00 * localX + projection.m01 * localY);
       camera.panY = screenY - nextZoom * (projection.m10 * localX + projection.m11 * localY);
       camera.zoom = nextZoom;
