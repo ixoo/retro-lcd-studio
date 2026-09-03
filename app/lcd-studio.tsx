@@ -24,6 +24,7 @@ import {
   type LcdMode,
 } from '@/app/lcd-canvas';
 import { Button } from '@/components/ui/button';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Slider } from '@/components/ui/slider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
@@ -46,6 +47,45 @@ const DEFAULT_APPEARANCE: LcdAppearance = {
   shadowSoftness: 0.055,
   shadowOpacity: 0.2,
 };
+
+const LCD_COLOR_PRESETS = [
+  {
+    id: 'graphite',
+    label: 'Graphite',
+    background: '#aeb5a7',
+    pixel: '#111512',
+  },
+  {
+    id: 'silver',
+    label: 'Silver',
+    background: '#d7d9d0',
+    pixel: '#28302d',
+  },
+  {
+    id: 'olive',
+    label: 'Olive',
+    background: '#a6ad78',
+    pixel: '#26301f',
+  },
+  {
+    id: 'pocket',
+    label: 'Pocket green',
+    background: '#9bbc0f',
+    pixel: '#0f380f',
+  },
+  {
+    id: 'amber',
+    label: 'Amber',
+    background: '#d2a154',
+    pixel: '#2b1a0b',
+  },
+  {
+    id: 'ice',
+    label: 'Ice blue',
+    background: '#8eb5bf',
+    pixel: '#102a35',
+  },
+] as const;
 
 type BitmapParseResult =
   | { rows: string[]; error: null }
@@ -389,6 +429,21 @@ export function LcdStudio() {
   const draftDimensions = parsedDraft.rows
     ? `${parsedDraft.rows[0].length} × ${parsedDraft.rows.length}`
     : '—';
+  const activeColorPreset = LCD_COLOR_PRESETS.find(
+    (preset) => preset.background === appearance.background
+      && preset.pixel === appearance.pixel,
+  );
+
+  const applyColorPreset = (presetId: string) => {
+    const preset = LCD_COLOR_PRESETS.find((item) => item.id === presetId);
+    if (!preset) return;
+    setAppearance((current) => ({
+      ...current,
+      background: preset.background,
+      pixel: preset.pixel,
+    }));
+    setActionStatus(`Color preset: ${preset.label}`);
+  };
 
   return (
     <main className="lcd-app" style={{ background: appearance.background }}>
@@ -536,6 +591,39 @@ export function LcdStudio() {
                 <h2>LCD character</h2>
                 <p>Flat color, spacing, and pixel shadow.</p>
               </div>
+            </div>
+
+            <div className="preset-block">
+              <div className="preset-label">
+                <span>Color preset</span>
+                <output>{activeColorPreset?.label ?? 'Custom'}</output>
+              </div>
+              <RadioGroup
+                className="preset-grid"
+                value={activeColorPreset?.id ?? ''}
+                aria-label="LCD color preset"
+                onValueChange={applyColorPreset}
+              >
+                {LCD_COLOR_PRESETS.map((preset) => (
+                  <div className="preset-option" key={preset.id}>
+                    <RadioGroupItem
+                      className="preset-radio"
+                      value={preset.id}
+                      aria-label={preset.label}
+                    />
+                    <span
+                      className="preset-swatch"
+                      style={{ backgroundColor: preset.background }}
+                      aria-hidden="true"
+                    >
+                      <i style={{ backgroundColor: preset.pixel }} />
+                      <i style={{ backgroundColor: preset.pixel }} />
+                      <i style={{ backgroundColor: preset.pixel }} />
+                    </span>
+                    <strong>{preset.label}</strong>
+                  </div>
+                ))}
+              </RadioGroup>
             </div>
 
             <div className="color-controls">
