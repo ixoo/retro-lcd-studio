@@ -1271,6 +1271,12 @@ export function LcdStudio() {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const isTyping = target?.matches('textarea, input, [contenteditable="true"]');
+      if (event.key === 'Escape' && textSessionRef.current) {
+        event.preventDefault();
+        stopTextSession();
+        setActionStatus('Text insertion cancelled');
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
         if (event.shiftKey) redo(); else undo();
@@ -1283,7 +1289,7 @@ export function LcdStudio() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [chooseMode, redo, undo]);
+  }, [chooseMode, redo, stopTextSession, undo]);
 
   const loadBitmapAction = useCallback(async (source: string) => {
     const parsed = parseBitmap(source);

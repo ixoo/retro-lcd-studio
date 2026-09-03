@@ -364,15 +364,23 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   let insideTextCursor = textCursorSize.x > 0.0 && textCursorSize.y > 0.0
     && selectionGrid.x >= textCursorOrigin.x && selectionGrid.y >= textCursorOrigin.y
     && selectionGrid.x < textCursorEnd.x && selectionGrid.y < textCursorEnd.y;
-  let textCursorLocal = selectionGrid - textCursorOrigin;
-  let textCursorEdgeDistance = min(
-    min(textCursorLocal.x, textCursorSize.x - textCursorLocal.x),
-    min(textCursorLocal.y, textCursorSize.y - textCursorLocal.y)
+  let textCursorCell = floor(selectionGrid) - textCursorOrigin;
+  let textCursorOutline = insideTextCursor && (
+    textCursorCell.x < 1.0 || textCursorCell.y < 1.0
+    || textCursorCell.x >= textCursorSize.x - 1.0
+    || textCursorCell.y >= textCursorSize.y - 1.0
   );
-  let textCursorBorder = max(max(fwidth(selectionGrid.x), fwidth(selectionGrid.y)) * 1.35, 0.035);
-  let textCursorOutline = insideTextCursor && textCursorEdgeDistance <= textCursorBorder;
+  let textCursorPixelCoverage = 1.0 - smoothstep(
+    -antialias,
+    antialias,
+    cellPixelDistance(selectionGrid)
+  );
   let textCursorColor = mix(uniforms.background.rgb, uniforms.pixelColor.rgb, 0.72);
-  color = mix(color, textCursorColor, select(0.0, 0.78, textCursorOutline));
+  color = mix(
+    color,
+    textCursorColor,
+    textCursorPixelCoverage * select(0.0, 0.62, textCursorOutline)
+  );
   return vec4<f32>(color, 1.0);
 }
 `;
