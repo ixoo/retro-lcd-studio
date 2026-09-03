@@ -518,6 +518,37 @@
   margin: 0 0 1.25rem;
 }
 
+.unit-reference {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0 0 1.1rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid #343c36;
+  border-radius: 0.48rem;
+  background: rgb(32 37 34 / 65%);
+  color: #8f998f;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.unit-reference strong {
+  color: #d7ff45;
+  font: 600 0.67rem/1 var(--font-geist-mono), monospace;
+}
+
+.derived-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -0.55rem 0 1.25rem;
+  color: #7f8980;
+  font-size: 0.68rem;
+}
+
+.derived-value output {
+  font: 550 0.64rem/1 var(--font-geist-mono), monospace;
+}
+
 .control-slider > span {
   display: flex;
   align-items: center;

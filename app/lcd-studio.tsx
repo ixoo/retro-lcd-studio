@@ -42,9 +42,10 @@ const INITIAL_BITMAP = [
 const DEFAULT_APPEARANCE: LcdAppearance = {
   background: '#aeb5a7',
   pixel: '#111512',
-  gap: 0.16,
-  shadowOffset: [0.075, -0.075],
-  shadowSoftness: 0.055,
+  pixelSizeMm: 1,
+  gapMm: 0.18,
+  shadowOffsetMm: [0.08, -0.08],
+  shadowSoftnessMm: 0.06,
   shadowOpacity: 0.2,
 };
 
@@ -140,6 +141,10 @@ function bitmapsMatch(first: string[], second: string[]) {
 
 function firstSliderValue(value: number | readonly number[]) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function formatMillimetres(value: number) {
+  return `${value.toFixed(2)} mm`;
 }
 
 function nextFrame() {
@@ -631,10 +636,20 @@ export function LcdStudio() {
               <ColorControl label="Surface" value={appearance.background} onChange={(background) => setAppearance((current) => ({ ...current, background }))} />
             </div>
 
-            <ControlSlider label="Cell gap" value={appearance.gap} formattedValue={`${Math.round(appearance.gap * 100)}%`} min={0} max={0.48} step={0.01} onChange={(gap) => setAppearance((current) => ({ ...current, gap }))} />
-            <ControlSlider label="Shadow X" value={appearance.shadowOffset[0]} formattedValue={appearance.shadowOffset[0].toFixed(2)} min={-0.25} max={0.25} step={0.005} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffset: [value, current.shadowOffset[1]] }))} />
-            <ControlSlider label="Shadow Y" value={appearance.shadowOffset[1]} formattedValue={appearance.shadowOffset[1].toFixed(2)} min={-0.25} max={0.25} step={0.005} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffset: [current.shadowOffset[0], value] }))} />
-            <ControlSlider label="Softness" value={appearance.shadowSoftness} formattedValue={appearance.shadowSoftness.toFixed(2)} min={0} max={0.2} step={0.005} onChange={(shadowSoftness) => setAppearance((current) => ({ ...current, shadowSoftness }))} />
+            <div className="unit-reference">
+              <span><strong>Content</strong> uses integer pixel coordinates.</span>
+              <span><strong>Geometry</strong> uses millimetres.</span>
+            </div>
+
+            <ControlSlider label="Pixel size" value={appearance.pixelSizeMm} formattedValue={formatMillimetres(appearance.pixelSizeMm)} min={0.25} max={5} step={0.05} onChange={(pixelSizeMm) => setAppearance((current) => ({ ...current, pixelSizeMm }))} />
+            <ControlSlider label="Pixel gap" value={appearance.gapMm} formattedValue={formatMillimetres(appearance.gapMm)} min={0} max={1} step={0.01} onChange={(gapMm) => setAppearance((current) => ({ ...current, gapMm }))} />
+            <div className="derived-value">
+              <span>Pixel pitch</span>
+              <output>{formatMillimetres(appearance.pixelSizeMm + appearance.gapMm)}</output>
+            </div>
+            <ControlSlider label="Shadow X" value={appearance.shadowOffsetMm[0]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[0])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [value, current.shadowOffsetMm[1]] }))} />
+            <ControlSlider label="Shadow Y" value={appearance.shadowOffsetMm[1]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[1])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [current.shadowOffsetMm[0], value] }))} />
+            <ControlSlider label="Softness" value={appearance.shadowSoftnessMm} formattedValue={formatMillimetres(appearance.shadowSoftnessMm)} min={0} max={1} step={0.01} onChange={(shadowSoftnessMm) => setAppearance((current) => ({ ...current, shadowSoftnessMm }))} />
             <ControlSlider label="Opacity" value={appearance.shadowOpacity} formattedValue={`${Math.round(appearance.shadowOpacity * 100)}%`} min={0} max={0.6} step={0.01} onChange={(shadowOpacity) => setAppearance((current) => ({ ...current, shadowOpacity }))} />
 
             <Button type="button" variant="outline" className="reset-appearance" onClick={() => setAppearance(DEFAULT_APPEARANCE)}>

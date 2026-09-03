@@ -13,9 +13,12 @@ export type LcdMode = 'view' | 'edit';
 export type LcdAppearance = {
   background: string;
   pixel: string;
-  gap: number;
-  shadowOffset: [number, number];
-  shadowSoftness: number;
+  /** Active square pixel edge length in millimetres. */
+  pixelSizeMm: number;
+  /** Physical separation between adjacent active pixels in millimetres. */
+  gapMm: number;
+  shadowOffsetMm: [number, number];
+  shadowSoftnessMm: number;
   shadowOpacity: number;
 };
 
@@ -140,10 +143,10 @@ struct Uniforms {
   invRow1: vec2<f32>,
   pan: vec2<f32>,
   scale: f32,
-  gap: f32,
-  shadowOffset: vec2<f32>,
-  shadowSoftness: f32,
   shadowOpacity: f32,
+  geometryMm: vec4<f32>,
+  shadowOffsetMm: vec2<f32>,
+  padding: vec2<f32>,
   background: vec4<f32>,
   pixelColor: vec4<f32>,
 };
@@ -169,7 +172,12 @@ fn vertexMain(@builtin(vertex_index) index: u32) -> VertexOutput {
 
 fn activePixelDistance(local: vec2<f32>) -> f32 {
   let dimensions = uniforms.bitmapSize;
-  let grid = vec2<f32>(local.x + dimensions.x * 0.5, dimensions.y * 0.5 - local.y);
+  let pixelSizeMm = uniforms.geometryMm.x;
+  let pitchMm = pixelSizeMm + uniforms.geometryMm.y;
+  let grid = vec2<f32>(
+    local.x / pitchMm + dimensions.x * 0.5,
+    dimensions.y * 0.5 - local.y / pitchMm
+  );
   let cell = floor(grid);
 
   if (cell.x < 0.0 || cell.y < 0.0 || cell.x >= dimensions.x || cell.y >= dimensions.y) {
@@ -182,8 +190,9 @@ fn activePixelDistance(local: vec2<f32>) -> f32 {
   }
 
   let withinCell = fract(grid);
-  let halfSize = 0.5 * (1.0 - uniforms.gap);
-  return max(abs(withinCell.x - 0.5), abs(withinCell.y - 0.5)) - halfSize;
+  let fromCenterMm = (withinCell - vec2<f32>(0.5)) * pitchMm;
+  let halfSizeMm = 0.5 * pixelSizeMm;
+  return max(abs(fromCenterMm.x), abs(fromCenterMm.y)) - halfSizeMm;
 }
 
 @fragment
@@ -200,9 +209,9 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   let footprint = max(fwidth(local.x), fwidth(local.y));
   let antialias = max(footprint * 0.72, 0.001);
   let pixelDistance = activePixelDistance(local);
-  let shadowDistance = activePixelDistance(local - uniforms.shadowOffset);
+  let shadowDistance = activePixelDistance(local - uniforms.shadowOffsetMm);
   let pixelCoverage = 1.0 - smoothstep(-antialias, antialias, pixelDistance);
-  let shadowFeather = max(uniforms.shadowSoftness, antialias);
+  let shadowFeather = max(uniforms.geometryMm.z, antialias);
   let shadowCoverage = (1.0 - smoothstep(-shadowFeather, shadowFeather, shadowDistance))
     * uniforms.shadowOpacity;
 
@@ -307,10 +316,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       const bounds = canvas.getBoundingClientRect();
       const width = Math.max(bitmapRef.current[0]?.length ?? 1, 1);
       const height = Math.max(bitmapRef.current.length, 1);
+      const pitchMm = appearanceRef.current.pixelSizeMm + appearanceRef.current.gapMm;
       cameraRef.current = {
         yaw: 0,
         pitch: 0,
-        zoom: clamp(Math.min((bounds.width - 96) / width, (bounds.height - 180) / height) * 0.82, 16, 64),
+        zoom: clamp(Math.min((bounds.width - 96) / (width * pitchMm), (bounds.height - 180) / (height * pitchMm)) * 0.82, 8, 180),
         panX: 0,
         panY: 0,
         fitted: true,
@@ -393,7 +403,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           const pipelineError = await device.popErrorScope();
           if (pipelineError) throw new Error(pipelineError.message);
           const uniformBuffer = device.createBuffer({
-            size: 96,
+            size: 112,
             usage: 0x40 | 0x08,
           });
 
@@ -470,8 +480,9 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
               const values = new Float32Array([
                 canvas!.width, canvas!.height, bitmapWidth, bitmapHeight,
                 projection.inv00, projection.inv01, projection.inv10, projection.inv11,
-                camera.panX * pixelRatio, camera.panY * pixelRatio, camera.zoom * pixelRatio, appearanceRef.current.gap,
-                appearanceRef.current.shadowOffset[0], appearanceRef.current.shadowOffset[1], appearanceRef.current.shadowSoftness, appearanceRef.current.shadowOpacity,
+                camera.panX * pixelRatio, camera.panY * pixelRatio, camera.zoom * pixelRatio, appearanceRef.current.shadowOpacity,
+                appearanceRef.current.pixelSizeMm, appearanceRef.current.gapMm, appearanceRef.current.shadowSoftnessMm, 0,
+                appearanceRef.current.shadowOffsetMm[0], appearanceRef.current.shadowOffsetMm[1], 0, 0,
                 ...background,
                 ...pixel,
               ]);
@@ -554,8 +565,9 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       const localY = (projection.inv10 * screenX + projection.inv11 * screenY) / camera.zoom;
       const width = bitmapRef.current[0]?.length ?? 0;
       const height = bitmapRef.current.length;
-      const column = Math.floor(localX + width * 0.5);
-      const row = Math.floor(height * 0.5 - localY);
+      const pitchMm = appearanceRef.current.pixelSizeMm + appearanceRef.current.gapMm;
+      const column = Math.floor(localX / pitchMm + width * 0.5);
+      const row = Math.floor(height * 0.5 - localY / pitchMm);
       if (column < 0 || row < 0 || column >= width || row >= height) return null;
       return { row, column };
     };
