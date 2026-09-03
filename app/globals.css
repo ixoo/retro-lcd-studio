@@ -323,6 +323,28 @@
   text-transform: uppercase;
 }
 
+.import-image {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.bitmap-picker-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: #7f8980;
+  font: 650 0.625rem/1 var(--font-geist-mono), monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.bitmap-picker-divider::after {
+  height: 1px;
+  flex: 1;
+  background: #343c36;
+  content: '';
+}
+
 .bitmap-picker-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

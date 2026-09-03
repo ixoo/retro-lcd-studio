@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Download,
   FolderOpen,
+  ImagePlus,
   MousePointer2,
   Pencil,
   Redo2,
@@ -40,6 +41,7 @@ const INITIAL_BITMAP = [
   '11111001110011110',
 ];
 const MAX_BITMAP_DIMENSION = 4096;
+const MAX_IMPORTED_IMAGE_DIMENSION = 1024;
 const INITIAL_BITMAP_OFFSET: [number, number] = [
   -INITIAL_BITMAP[0].length / 2,
   -INITIAL_BITMAP.length / 2,
@@ -213,6 +215,104 @@ function parseBitmap(source: string): BitmapParseResult {
     return { rows: null, error: `Bitmaps are limited to ${MAX_BITMAP_DIMENSION} × ${MAX_BITMAP_DIMENSION} pixels.` };
   }
   return { rows: normalized, error: null };
+}
+
+function automaticThreshold(histogram: Uint32Array, pixelCount: number) {
+  let totalLuminance = 0;
+  for (let value = 0; value < histogram.length; value += 1) {
+    totalLuminance += value * histogram[value];
+  }
+
+  let backgroundWeight = 0;
+  let backgroundLuminance = 0;
+  let strongestSeparation = -1;
+  let threshold = 127;
+
+  for (let value = 0; value < histogram.length; value += 1) {
+    backgroundWeight += histogram[value];
+    if (backgroundWeight === 0) continue;
+    const foregroundWeight = pixelCount - backgroundWeight;
+    if (foregroundWeight === 0) break;
+
+    backgroundLuminance += value * histogram[value];
+    const backgroundMean = backgroundLuminance / backgroundWeight;
+    const foregroundMean = (totalLuminance - backgroundLuminance) / foregroundWeight;
+    const separation = backgroundWeight
+      * foregroundWeight
+      * (backgroundMean - foregroundMean) ** 2;
+
+    if (separation > strongestSeparation) {
+      strongestSeparation = separation;
+      threshold = value;
+    }
+  }
+
+  return threshold;
+}
+
+async function imageFileToBitmap(file: File) {
+  const imageUrl = URL.createObjectURL(file);
+  const image = new Image();
+
+  try {
+    image.decoding = 'async';
+    image.src = imageUrl;
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error('This image format could not be decoded.'));
+    });
+
+    if (image.naturalWidth < 1 || image.naturalHeight < 1) {
+      throw new Error('The image has no visible dimensions.');
+    }
+
+    const scale = Math.min(
+      1,
+      MAX_IMPORTED_IMAGE_DIMENSION / Math.max(image.naturalWidth, image.naturalHeight),
+    );
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) throw new Error('Image conversion is unavailable in this browser.');
+
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.clearRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+    const rgba = context.getImageData(0, 0, width, height).data;
+    const luminance = new Uint8Array(width * height);
+    const histogram = new Uint32Array(256);
+
+    for (let index = 0; index < luminance.length; index += 1) {
+      const rgbaIndex = index * 4;
+      const alpha = rgba[rgbaIndex + 3] / 255;
+      const imageLuminance = Math.round(
+        rgba[rgbaIndex] * 0.2126
+        + rgba[rgbaIndex + 1] * 0.7152
+        + rgba[rgbaIndex + 2] * 0.0722,
+      );
+      const compositedLuminance = Math.round(imageLuminance * alpha + 255 * (1 - alpha));
+      luminance[index] = compositedLuminance;
+      histogram[compositedLuminance] += 1;
+    }
+
+    const threshold = automaticThreshold(histogram, luminance.length);
+    const rows = Array.from({ length: height }, (_, rowIndex) => {
+      let row = '';
+      const rowStart = rowIndex * width;
+      for (let column = 0; column < width; column += 1) {
+        row += luminance[rowStart + column] <= threshold ? '1' : '0';
+      }
+      return row;
+    });
+
+    return { rows, resized: scale < 1 };
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
 }
 
 function bitmapsMatch(first: string[], second: string[]) {
@@ -698,6 +798,7 @@ function BitmapThumbnail({
 
 export function LcdStudio() {
   const canvasRef = useRef<LcdCanvasHandle>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const bitmapRef = useRef(INITIAL_BITMAP);
   const bitmapOffsetRef = useRef<[number, number]>(INITIAL_BITMAP_OFFSET);
   const paintBaseRef = useRef<BitmapFrame | null>(null);
@@ -709,6 +810,7 @@ export function LcdStudio() {
   const [past, setPast] = useState<BitmapFrame[]>([]);
   const [future, setFuture] = useState<BitmapFrame[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [importingImage, setImportingImage] = useState(false);
   const [bitmapPickerOpen, setBitmapPickerOpen] = useState(false);
   const [actionStatus, setActionStatus] = useState('Ready');
 
@@ -939,6 +1041,30 @@ export function LcdStudio() {
     setActionStatus(`Bitmap loaded: ${demo.label}`);
   };
 
+  const importImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+
+    setImportingImage(true);
+    setActionStatus(`Converting ${file.name}…`);
+    try {
+      const { rows, resized } = await imageFileToBitmap(file);
+      replaceBitmap(rows, true, centeredBitmapOffset(rows));
+      canvasRef.current?.resetView();
+      setBitmapPickerOpen(false);
+      setActionStatus(
+        `${file.name} imported · ${rows[0].length} × ${rows.length}${resized ? ' · resized' : ''}`,
+      );
+    } catch (error) {
+      console.error('Unable to import the image.', error);
+      setActionStatus(error instanceof Error ? error.message : 'Image import failed');
+    } finally {
+      setImportingImage(false);
+    }
+  };
+
   const activeColorPreset = LCD_COLOR_PRESETS.find(
     (preset) => preset.background === appearance.background
       && preset.pixel === appearance.pixel,
@@ -1010,6 +1136,25 @@ export function LcdStudio() {
                 </PopoverTrigger>
                 <PopoverContent className="bitmap-picker" align="start" sideOffset={8}>
                   <PopoverTitle className="bitmap-picker-title">Open bitmap</PopoverTitle>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="import-image"
+                    disabled={importingImage}
+                    onClick={() => imageInputRef.current?.click()}
+                  >
+                    <ImagePlus data-icon="inline-start" />
+                    {importingImage ? 'Converting…' : 'Import image'}
+                  </Button>
+                  <input
+                    ref={imageInputRef}
+                    className="sr-only"
+                    type="file"
+                    accept="image/*"
+                    aria-label="Choose an image to convert to a bitmap"
+                    onChange={(event) => void importImage(event)}
+                  />
+                  <span className="bitmap-picker-divider">Demos</span>
                   <div className="bitmap-picker-grid">
                     {DEMO_BITMAPS.map((demo) => (
                       <button
