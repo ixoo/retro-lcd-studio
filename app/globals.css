@@ -422,33 +422,21 @@
 }
 
 .text-size-picker {
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.25rem;
   padding: 0.15rem;
   border-radius: 0.55rem;
   background: #222824;
 }
 
-.pixel-text-input {
-  width: 100%;
-  height: 2.2rem;
-  padding: 0 0.65rem;
-  border: 1px solid #3b443d;
-  border-radius: 0.5rem;
-  color: #eef2e9;
-  background: #101411;
-  outline: none;
-}
-
-.pixel-text-input:focus {
-  border-color: #d7ff45;
-  box-shadow: 0 0 0 2px rgb(215 255 69 / 12%);
-}
-
-.pixel-text-input:disabled {
-  color: #788078;
-  cursor: crosshair;
-  opacity: 0.75;
+.pixel-text-capture {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .sprite-grid {
@@ -793,6 +781,8 @@
   .edit-tool-row button,
   .guide-callout,
   .sprite-choice,
+  .font-choice,
+  .text-size-picker button,
   .preset-option,
   .toggle-control {
     min-height: 2.75rem;

@@ -43,6 +43,7 @@ type LcdCanvasProps = {
   mode: LcdMode;
   editTool: 'pen' | 'text' | 'stamp' | 'select';
   stampBitmap: string[];
+  textCursorSize: [number, number];
   selection: LcdSelection | null;
   appearance: LcdAppearance;
   onPixelChange: (row: number, column: number, value: 0 | 1) => void;
@@ -175,6 +176,7 @@ struct Uniforms {
   pixelColor: vec4<f32>,
   stampPreview: vec4<f32>,
   selection: vec4<f32>,
+  textCursor: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -354,6 +356,14 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
     insideSelection && !selectedPixelWasOn
   );
   color = mix(color, selectionColor, selectionCoverage * selectedOffMask * 0.96);
+  let textCursorOrigin = uniforms.textCursor.xy;
+  let textCursorSize = uniforms.textCursor.zw;
+  let textCursorEnd = textCursorOrigin + textCursorSize;
+  let insideTextCursor = textCursorSize.x > 0.0 && textCursorSize.y > 0.0
+    && selectionGrid.x >= textCursorOrigin.x && selectionGrid.y >= textCursorOrigin.y
+    && selectionGrid.x < textCursorEnd.x && selectionGrid.y < textCursorEnd.y;
+  let textCursorColor = mix(uniforms.background.rgb, uniforms.pixelColor.rgb, 0.72);
+  color = mix(color, textCursorColor, select(0.0, 0.32, insideTextCursor));
   return vec4<f32>(color, 1.0);
 }
 `;
@@ -414,6 +424,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       mode,
       editTool,
       stampBitmap,
+      textCursorSize,
       selection,
       appearance,
       onPixelChange,
@@ -430,6 +441,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const runtimeRef = useRef<GpuRuntime | null>(null);
     const bitmapRef = useRef(bitmap);
     const stampBitmapRef = useRef(stampBitmap);
+    const textCursorSizeRef = useRef(textCursorSize);
     const selectionRef = useRef(selection);
     const bitmapOffsetRef = useRef(bitmapOffsetCells);
     const appearanceRef = useRef(appearance);
@@ -443,6 +455,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const modeRef = useRef(mode);
     const editToolRef = useRef(editTool);
     const stampPreviewCellRef = useRef<{ row: number; column: number } | null>(null);
+    const textCursorCellRef = useRef<{ row: number; column: number } | null>(null);
+    const textCursorVisibleRef = useRef(true);
     const frameRef = useRef<number | null>(null);
     const [rendererState, setRendererState] = useState<'loading' | 'ready' | 'unsupported' | 'error'>('loading');
     const cameraRef = useRef<Camera>({
@@ -586,7 +600,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           const pipelineError = await device.popErrorScope();
           if (pipelineError) throw new Error(pipelineError.message);
           const uniformBuffer = device.createBuffer({
-            size: 144,
+            size: 160,
             usage: 0x40 | 0x08,
           });
 
@@ -709,6 +723,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
               const selectionValues = currentSelection
                 ? [currentSelection.column, currentSelection.row, currentSelection.width, currentSelection.height]
                 : [0, 0, 0, 0];
+              const textCursorCell = textCursorCellRef.current;
+              const textCursorValues = textCursorCell && textCursorVisibleRef.current
+                ? [textCursorCell.column, textCursorCell.row, ...textCursorSizeRef.current]
+                : [0, 0, 0, 0];
               background[3] = (appearanceRef.current.inverted ? 1 : 0)
                 + (appearanceRef.current.gridVisible ? 2 : 0);
               const values = new Float32Array([
@@ -721,6 +739,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
                 ...pixel,
                 ...stampPreview,
                 ...selectionValues,
+                ...textCursorValues,
               ]);
               device.queue.writeBuffer(uniformBuffer, 0, values);
 
@@ -786,6 +805,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     }, [stampBitmap]);
 
     useEffect(() => {
+      textCursorSizeRef.current = textCursorSize;
+      scheduleDraw();
+    }, [textCursorSize]);
+
+    useEffect(() => {
       bitmapOffsetRef.current = bitmapOffsetCells;
       scheduleDraw();
     }, [bitmapOffsetCells]);
@@ -814,7 +838,24 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         stampPreviewCellRef.current = null;
         scheduleDraw();
       }
+      if (mode !== 'edit' || editTool !== 'text') {
+        textCursorCellRef.current = null;
+        scheduleDraw();
+      }
     }, [editTool, mode, onPaintEnd, onPaintStart, onPixelChange, onSelectionChange, onSelectionEnd, onStamp, onTextStart]);
+
+    useEffect(() => {
+      if (mode !== 'edit' || editTool !== 'text') {
+        textCursorVisibleRef.current = false;
+        return;
+      }
+      textCursorVisibleRef.current = true;
+      const interval = window.setInterval(() => {
+        textCursorVisibleRef.current = !textCursorVisibleRef.current;
+        runtimeRef.current?.draw();
+      }, 520);
+      return () => window.clearInterval(interval);
+    }, [editTool, mode]);
 
     const cellAtPointer = (clientX: number, clientY: number) => {
       const canvas = canvasRef.current;
@@ -858,7 +899,12 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
 
     const startTextAtPointer = (clientX: number, clientY: number) => {
       const cell = cellAtPointer(clientX, clientY);
-      if (cell) onTextStartRef.current(cell.row, cell.column);
+      if (cell) {
+        textCursorCellRef.current = cell;
+        textCursorVisibleRef.current = true;
+        scheduleDraw();
+        onTextStartRef.current(cell.row, cell.column);
+      }
     };
 
     const updateStampPreview = (clientX: number, clientY: number) => {
@@ -868,6 +914,17 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       const previous = stampPreviewCellRef.current;
       if (previous?.row === cell.row && previous.column === cell.column) return;
       stampPreviewCellRef.current = cell;
+      scheduleDraw();
+    };
+
+    const updateTextPreview = (clientX: number, clientY: number) => {
+      if (modeRef.current !== 'edit' || editToolRef.current !== 'text') return;
+      const cell = cellAtPointer(clientX, clientY);
+      if (!cell) return;
+      const previous = textCursorCellRef.current;
+      if (previous?.row === cell.row && previous.column === cell.column) return;
+      textCursorCellRef.current = cell;
+      textCursorVisibleRef.current = true;
       scheduleDraw();
     };
 
@@ -886,10 +943,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       onSelectionChangeRef.current(selectionBetween(anchor, cell));
     };
 
-    const clearStampPreview = () => {
-      if (!stampPreviewCellRef.current) return;
+    const clearPointerPreviews = () => {
+      const hadPreview = stampPreviewCellRef.current || textCursorCellRef.current;
       stampPreviewCellRef.current = null;
-      scheduleDraw();
+      if (editToolRef.current !== 'text') textCursorCellRef.current = null;
+      if (hadPreview) scheduleDraw();
     };
 
     const beginTouchGesture = () => {
@@ -984,6 +1042,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
       if (event.pointerType !== 'touch') {
         updateStampPreview(event.clientX, event.clientY);
+        updateTextPreview(event.clientX, event.clientY);
       }
 
       if (event.pointerType === 'touch' && touchPointersRef.current.has(event.pointerId)) {
@@ -1128,7 +1187,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           onPointerMove={handlePointerMove}
           onPointerUp={endPointer}
           onPointerCancel={endPointer}
-          onPointerLeave={clearStampPreview}
+          onPointerLeave={clearPointerPreviews}
           onWheel={handleWheel}
           onContextMenu={(event) => event.preventDefault()}
         />

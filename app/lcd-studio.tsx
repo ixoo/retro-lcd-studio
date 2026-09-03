@@ -148,14 +148,17 @@ const SPRITE_BITMAPS = [
 const CLIPBOARD_SPRITE_ID = 'clipboard';
 
 type EditTool = 'pen' | 'text' | 'stamp' | 'select';
-type PixelFontId = 'terminal' | 'typewriter' | 'block';
+type PixelFontId = 'terminal' | 'typewriter' | 'block' | 'rounded' | 'narrow' | 'serif';
 
 const PIXEL_FONTS: Array<{ id: PixelFontId; label: string; css: string; weight: number }> = [
   { id: 'terminal', label: 'Terminal', css: 'ui-monospace, SFMono-Regular, Menlo, monospace', weight: 700 },
   { id: 'typewriter', label: 'Typewriter', css: 'Courier New, Courier, monospace', weight: 700 },
   { id: 'block', label: 'Block', css: 'Arial Black, Arial, sans-serif', weight: 900 },
+  { id: 'rounded', label: 'Rounded', css: 'Trebuchet MS, Arial, sans-serif', weight: 700 },
+  { id: 'narrow', label: 'Narrow', css: 'Arial Narrow, Helvetica Neue, sans-serif', weight: 700 },
+  { id: 'serif', label: 'Serif', css: 'Georgia, Times New Roman, serif', weight: 700 },
 ];
-const TEXT_PIXEL_SIZES = [8, 12, 16] as const;
+const TEXT_PIXEL_SIZES = [6, 8, 10, 12, 16, 20, 24] as const;
 
 const DEFAULT_APPEARANCE: LcdAppearance = {
   background: '#aeb5a7',
@@ -970,6 +973,7 @@ export function LcdStudio() {
   const [textPixelSize, setTextPixelSize] = useState<(typeof TEXT_PIXEL_SIZES)[number]>(12);
   const [textValue, setTextValue] = useState('');
   const [textAnchor, setTextAnchor] = useState<{ row: number; column: number } | null>(null);
+  const [textCursorSize, setTextCursorSize] = useState<[number, number]>([8, 9]);
   const [selection, setSelection] = useState<LcdSelection | null>(null);
   const [clipboardBitmap, setClipboardBitmap] = useState<string[] | null>(null);
   const [bitmap, setBitmap] = useState(INITIAL_BITMAP);
@@ -980,6 +984,14 @@ export function LcdStudio() {
   const [exporting, setExporting] = useState(false);
   const [importingImage, setImportingImage] = useState(false);
   const [actionStatus, setActionStatus] = useState('Ready');
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const firstGlyph = rasterizePixelText('M', selectedFontId, textPixelSize);
+      setTextCursorSize([firstGlyph[0]?.length ?? 1, firstGlyph.length]);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [selectedFontId, textPixelSize]);
 
   const stopTextSession = useCallback(() => {
     textSessionRef.current = null;
@@ -1525,13 +1537,12 @@ export function LcdStudio() {
                     </fieldset>
                     <input
                       ref={textInputRef}
-                      className="pixel-text-input"
+                      className="pixel-text-capture"
                       type="text"
                       value={textValue}
                       maxLength={120}
                       disabled={!textAnchor}
                       aria-label="Text to place"
-                      placeholder={textAnchor ? 'Type…' : 'Click the display to start'}
                       autoCapitalize="off"
                       autoCorrect="off"
                       spellCheck={false}
@@ -1679,6 +1690,7 @@ export function LcdStudio() {
           bitmapOffsetCells={bitmapOffsetCells}
           mode={mode}
           editTool={editTool}
+          textCursorSize={textValue ? [0, 0] : textCursorSize}
           stampBitmap={selectedSpriteId === CLIPBOARD_SPRITE_ID
             ? clipboardBitmap ?? ['0']
             : SPRITE_BITMAPS.find((sprite) => sprite.id === selectedSpriteId)?.rows ?? SPRITE_BITMAPS[0].rows}
