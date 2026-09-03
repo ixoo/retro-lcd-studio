@@ -406,6 +406,96 @@ function GeometryGuide({ appearance }: { appearance: LcdAppearance }) {
   );
 }
 
+type ShadowLegendId = 'softness' | 'x' | 'y';
+type GuidePoint = { x: number; y: number };
+type GuideRect = { x: number; y: number; width: number; height: number };
+type GuideSlot = GuideRect & { id: string };
+
+const SHADOW_GUIDE_WIDTH = 304;
+const SHADOW_GUIDE_HEIGHT = 224;
+const SHADOW_LEGEND_SLOTS: GuideSlot[] = [
+  { id: 'top-left', x: 6, y: 6, width: 78, height: 42 },
+  { id: 'top-right', x: 220, y: 6, width: 78, height: 42 },
+  { id: 'middle-left', x: 6, y: 91, width: 78, height: 42 },
+  { id: 'middle-right', x: 220, y: 91, width: 78, height: 42 },
+  { id: 'bottom-left', x: 6, y: 176, width: 78, height: 42 },
+  { id: 'bottom-right', x: 220, y: 176, width: 78, height: 42 },
+];
+
+function rectanglesOverlap(a: GuideRect, b: GuideRect) {
+  return a.x < b.x + b.width
+    && a.x + a.width > b.x
+    && a.y < b.y + b.height
+    && a.y + a.height > b.y;
+}
+
+function nearestSlotAnchor(target: GuidePoint, slot: GuideSlot) {
+  const anchors = [
+    { point: { x: slot.x, y: slot.y + slot.height / 2 }, side: 'left' },
+    { point: { x: slot.x + slot.width, y: slot.y + slot.height / 2 }, side: 'right' },
+    { point: { x: slot.x + slot.width / 2, y: slot.y }, side: 'top' },
+    { point: { x: slot.x + slot.width / 2, y: slot.y + slot.height }, side: 'bottom' },
+  ] as const;
+
+  return anchors.reduce((best, candidate) => {
+    const distance = Math.abs(target.x - candidate.point.x) + Math.abs(target.y - candidate.point.y);
+    const bestDistance = Math.abs(target.x - best.point.x) + Math.abs(target.y - best.point.y);
+    return distance < bestDistance ? candidate : best;
+  });
+}
+
+function connectorPath(target: GuidePoint, slot: GuideSlot) {
+  const anchor = nearestSlotAnchor(target, slot);
+  if (anchor.side === 'left' || anchor.side === 'right') {
+    return `M ${target.x} ${target.y} V ${anchor.point.y} H ${anchor.point.x}`;
+  }
+  return `M ${target.x} ${target.y} H ${anchor.point.x} V ${anchor.point.y}`;
+}
+
+function placeShadowLegends(
+  targets: Record<ShadowLegendId, GuidePoint>,
+  shadowBounds: GuideRect,
+) {
+  const legendIds: ShadowLegendId[] = ['softness', 'y', 'x'];
+  let bestScore = Number.POSITIVE_INFINITY;
+  let bestLayout = {} as Record<ShadowLegendId, GuideSlot>;
+
+  function assignLegend(
+    index: number,
+    usedSlots: Set<string>,
+    layout: Partial<Record<ShadowLegendId, GuideSlot>>,
+    score: number,
+  ) {
+    if (index === legendIds.length) {
+      if (score < bestScore) {
+        bestScore = score;
+        bestLayout = { ...layout } as Record<ShadowLegendId, GuideSlot>;
+      }
+      return;
+    }
+
+    const legendId = legendIds[index];
+    const target = targets[legendId];
+    for (const slot of SHADOW_LEGEND_SLOTS) {
+      if (usedSlots.has(slot.id)) continue;
+      const anchor = nearestSlotAnchor(target, slot).point;
+      const distance = Math.abs(target.x - anchor.x) + Math.abs(target.y - anchor.y);
+      const overlapPenalty = rectanglesOverlap(slot, shadowBounds) ? 10_000 : 0;
+      const nextScore = score + distance + overlapPenalty;
+      if (nextScore >= bestScore) continue;
+
+      usedSlots.add(slot.id);
+      layout[legendId] = slot;
+      assignLegend(index + 1, usedSlots, layout, nextScore);
+      usedSlots.delete(slot.id);
+      delete layout[legendId];
+    }
+  }
+
+  assignLegend(0, new Set(), {}, 0);
+  return bestLayout;
+}
+
 function ShadowGuide({ appearance }: { appearance: LcdAppearance }) {
   const scale = Math.min(
     74 / appearance.pixelWidthMm,
@@ -428,9 +518,40 @@ function ShadowGuide({ appearance }: { appearance: LcdAppearance }) {
   const xMeasureY = 174;
   const yMeasureX = 220;
   const softnessExtent = Math.max(blur * 1.35, 0.75);
-  const softnessMeasureX = shadowX + pixelWidth * 0.22;
-  const softnessTop = shadowY - softnessExtent;
-  const softnessBottom = shadowY + softnessExtent;
+  const horizontalExposure = Math.abs(offsetX);
+  const verticalExposure = Math.abs(offsetY);
+  const softnessEdge = horizontalExposure === 0 && verticalExposure === 0
+    ? 'top'
+    : horizontalExposure >= verticalExposure
+      ? (offsetX >= 0 ? 'right' : 'left')
+      : (offsetY >= 0 ? 'bottom' : 'top');
+  const softnessMeasureX = shadowX + pixelWidth * 0.25;
+  const softnessMeasureY = shadowY + pixelHeight * 0.25;
+  const softnessIsVertical = softnessEdge === 'top' || softnessEdge === 'bottom';
+  const softnessEdgeX = softnessEdge === 'left' ? shadowX : shadowRight;
+  const softnessEdgeY = softnessEdge === 'top' ? shadowY : shadowBottom;
+  const softnessTarget = softnessIsVertical
+    ? { x: softnessMeasureX, y: softnessEdgeY }
+    : { x: softnessEdgeX, y: softnessMeasureY };
+  const softnessBracket = softnessIsVertical
+    ? `M ${softnessMeasureX - 4} ${softnessEdgeY - softnessExtent} H ${softnessMeasureX} V ${softnessEdgeY + softnessExtent} H ${softnessMeasureX - 4}`
+    : `M ${softnessEdgeX - softnessExtent} ${softnessMeasureY - 4} V ${softnessMeasureY} H ${softnessEdgeX + softnessExtent} V ${softnessMeasureY - 4}`;
+  const legendTargets: Record<ShadowLegendId, GuidePoint> = {
+    softness: softnessTarget,
+    x: { x: (pixelRight + shadowRight) / 2, y: xMeasureY },
+    y: { x: yMeasureX, y: (pixelBottom + shadowBottom) / 2 },
+  };
+  const shadowBounds = {
+    x: Math.min(pixelX, shadowX - softnessExtent) - 5,
+    y: Math.min(pixelY, shadowY - softnessExtent) - 5,
+    width: Math.max(pixelRight, shadowRight + softnessExtent) - Math.min(pixelX, shadowX - softnessExtent) + 10,
+    height: Math.max(pixelBottom, shadowBottom + softnessExtent) - Math.min(pixelY, shadowY - softnessExtent) + 10,
+  };
+  const legendLayout = placeShadowLegends(legendTargets, shadowBounds);
+  const legendStyle = (legendId: ShadowLegendId) => ({
+    left: `${(legendLayout[legendId].x / SHADOW_GUIDE_WIDTH) * 100}%`,
+    top: `${(legendLayout[legendId].y / SHADOW_GUIDE_HEIGHT) * 100}%`,
+  });
 
   return (
     <div className="shadow-guide">
@@ -463,23 +584,23 @@ function ShadowGuide({ appearance }: { appearance: LcdAppearance }) {
 
         <g className="guide-shadow-measurement" stroke={appearance.pixel} aria-hidden="true">
           <path d={`M ${pixelRight} ${xMeasureY - 4} V ${xMeasureY} H ${shadowRight} V ${xMeasureY - 4}`} />
-          <path d={`M ${(pixelRight + shadowRight) / 2} ${xMeasureY} V 200 H 230`} />
+          <path d={connectorPath(legendTargets.x, legendLayout.x)} />
 
           <path d={`M ${yMeasureX - 4} ${pixelBottom} H ${yMeasureX} V ${shadowBottom} H ${yMeasureX - 4}`} />
-          <path d={`M ${yMeasureX} ${(pixelBottom + shadowBottom) / 2} H 230 V 104`} />
+          <path d={connectorPath(legendTargets.y, legendLayout.y)} />
 
-          <path d={`M ${softnessMeasureX - 4} ${softnessTop} H ${softnessMeasureX} V ${softnessBottom} H ${softnessMeasureX - 4}`} />
-          <path d={`M ${softnessMeasureX} ${(softnessTop + softnessBottom) / 2} H 78 V 23`} />
+          <path d={softnessBracket} />
+          <path d={connectorPath(legendTargets.softness, legendLayout.softness)} />
         </g>
       </svg>
 
-      <button type="button" className="guide-callout shadow-callout shadow-softness" onClick={() => focusSlider('shadow-softness')}>
+      <button type="button" className="guide-callout shadow-callout shadow-softness" style={legendStyle('softness')} data-slot={legendLayout.softness.id} onClick={() => focusSlider('shadow-softness')}>
         <span>Softness</span><strong>{formatMillimetres(appearance.shadowSoftnessMm)}</strong>
       </button>
-      <button type="button" className="guide-callout shadow-callout shadow-y" onClick={() => focusSlider('shadow-y')}>
+      <button type="button" className="guide-callout shadow-callout shadow-y" style={legendStyle('y')} data-slot={legendLayout.y.id} onClick={() => focusSlider('shadow-y')}>
         <span>Y offset</span><strong>{formatMillimetres(appearance.shadowOffsetMm[1])}</strong>
       </button>
-      <button type="button" className="guide-callout shadow-callout shadow-x" onClick={() => focusSlider('shadow-x')}>
+      <button type="button" className="guide-callout shadow-callout shadow-x" style={legendStyle('x')} data-slot={legendLayout.x.id} onClick={() => focusSlider('shadow-x')}>
         <span>X offset</span><strong>{formatMillimetres(appearance.shadowOffsetMm[0])}</strong>
       </button>
     </div>

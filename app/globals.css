@@ -283,22 +283,7 @@
 }
 
 .shadow-callout {
-  min-width: 4.8rem;
-}
-
-.shadow-softness {
-  top: 0.35rem;
-  left: 0.35rem;
-}
-
-.shadow-y {
-  top: 5.2rem;
-  right: 0.35rem;
-}
-
-.shadow-x {
-  right: 0.35rem;
-  bottom: 0.35rem;
+  width: 4.8rem;
 }
 
 .geometry-controls {
