@@ -467,6 +467,7 @@ function connectorPath(target: GuidePoint, slot: GuideSlot) {
 function placeShadowLegends(
   targets: Record<ShadowLegendId, GuidePoint>,
   shadowBounds: GuideRect,
+  allowedSlots: Record<ShadowLegendId, readonly string[]>,
 ) {
   const legendIds: ShadowLegendId[] = ['softness', 'y', 'x'];
   let bestScore = Number.POSITIVE_INFINITY;
@@ -489,7 +490,7 @@ function placeShadowLegends(
     const legendId = legendIds[index];
     const target = targets[legendId];
     for (const slot of SHADOW_LEGEND_SLOTS) {
-      if (usedSlots.has(slot.id)) continue;
+      if (usedSlots.has(slot.id) || !allowedSlots[legendId].includes(slot.id)) continue;
       const anchor = nearestSlotAnchor(target, slot).point;
       const distance = Math.abs(target.x - anchor.x) + Math.abs(target.y - anchor.y);
       const overlapPenalty = rectanglesOverlap(slot, shadowBounds) ? 10_000 : 0;
@@ -548,13 +549,10 @@ function ShadowGuide({ appearance }: { appearance: LcdAppearance }) {
     if (softnessIsVertical) {
       const top = softnessEdgeY - softnessExtent;
       const bottom = softnessEdgeY + softnessExtent;
-      const left = Math.min(pixelX, shadowX - softnessExtent) - clearance;
-      const right = Math.max(pixelRight, shadowRight + softnessExtent) + clearance;
-      const bracketX = left >= SHADOW_GUIDE_WIDTH - right ? left : right;
-      const tick = bracketX === left ? 4 : -4;
+      const bracketX = Math.min(pixelX, shadowX - softnessExtent) - clearance;
 
       return {
-        bracket: `M ${bracketX + tick} ${top} H ${bracketX} V ${bottom} H ${bracketX + tick}`,
+        bracket: `M ${bracketX + 4} ${top} H ${bracketX} V ${bottom} H ${bracketX + 4}`,
         extensions: `M ${softnessMeasureX} ${top} H ${bracketX} M ${softnessMeasureX} ${bottom} H ${bracketX}`,
         target: { x: bracketX, y: softnessEdgeY },
       };
@@ -562,13 +560,10 @@ function ShadowGuide({ appearance }: { appearance: LcdAppearance }) {
 
     const left = softnessEdgeX - softnessExtent;
     const right = softnessEdgeX + softnessExtent;
-    const top = Math.min(pixelY, shadowY - softnessExtent) - clearance;
-    const bottom = Math.max(pixelBottom, shadowBottom + softnessExtent) + clearance;
-    const bracketY = top >= SHADOW_GUIDE_HEIGHT - bottom ? top : bottom;
-    const tick = bracketY === top ? 4 : -4;
+    const bracketY = Math.min(pixelY, shadowY - softnessExtent) - clearance;
 
     return {
-      bracket: `M ${left} ${bracketY + tick} V ${bracketY} H ${right} V ${bracketY + tick}`,
+      bracket: `M ${left} ${bracketY + 4} V ${bracketY} H ${right} V ${bracketY + 4}`,
       extensions: `M ${left} ${softnessMeasureY} V ${bracketY} M ${right} ${softnessMeasureY} V ${bracketY}`,
       target: { x: softnessEdgeX, y: bracketY },
     };
@@ -584,7 +579,14 @@ function ShadowGuide({ appearance }: { appearance: LcdAppearance }) {
     width: Math.max(pixelRight, shadowRight + softnessExtent) - Math.min(pixelX, shadowX - softnessExtent) + 10,
     height: Math.max(pixelBottom, shadowBottom + softnessExtent) - Math.min(pixelY, shadowY - softnessExtent) + 10,
   };
-  const legendLayout = placeShadowLegends(legendTargets, shadowBounds);
+  const allowedLegendSlots: Record<ShadowLegendId, readonly string[]> = {
+    softness: softnessIsVertical
+      ? ['top-left', 'middle-left']
+      : ['top-left', 'top-right'],
+    x: ['bottom-left', 'bottom-right'],
+    y: ['top-right', 'middle-right'],
+  };
+  const legendLayout = placeShadowLegends(legendTargets, shadowBounds, allowedLegendSlots);
   const legendStyle = (legendId: ShadowLegendId) => ({
     left: `${(legendLayout[legendId].x / SHADOW_GUIDE_WIDTH) * 100}%`,
     top: `${(legendLayout[legendId].y / SHADOW_GUIDE_HEIGHT) * 100}%`,
