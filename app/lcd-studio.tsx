@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Settings2,
   Stamp,
+  Type,
   Undo2,
 } from 'lucide-react';
 
@@ -146,7 +147,15 @@ const SPRITE_BITMAPS = [
 
 const CLIPBOARD_SPRITE_ID = 'clipboard';
 
-type EditTool = 'pen' | 'stamp' | 'select';
+type EditTool = 'pen' | 'text' | 'stamp' | 'select';
+type PixelFontId = 'terminal' | 'typewriter' | 'block';
+
+const PIXEL_FONTS: Array<{ id: PixelFontId; label: string; css: string; weight: number }> = [
+  { id: 'terminal', label: 'Terminal', css: 'ui-monospace, SFMono-Regular, Menlo, monospace', weight: 700 },
+  { id: 'typewriter', label: 'Typewriter', css: 'Courier New, Courier, monospace', weight: 700 },
+  { id: 'block', label: 'Block', css: 'Arial Black, Arial, sans-serif', weight: 900 },
+];
+const TEXT_PIXEL_SIZES = [8, 12, 16] as const;
 
 const DEFAULT_APPEARANCE: LcdAppearance = {
   background: '#aeb5a7',
@@ -217,6 +226,13 @@ type BitmapParseResult =
 type BitmapFrame = {
   rows: string[];
   offsetCells: [number, number];
+};
+
+type TextSession = {
+  base: BitmapFrame;
+  row: number;
+  column: number;
+  historyRecorded: boolean;
 };
 
 type BrowserTool = {
@@ -807,6 +823,81 @@ function ColorControl({
   );
 }
 
+function rasterizePixelText(text: string, fontId: PixelFontId, pixelSize: number) {
+  if (!text || typeof document === 'undefined') return ['0'];
+  const font = PIXEL_FONTS.find((item) => item.id === fontId) ?? PIXEL_FONTS[0];
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return ['0'];
+
+  context.font = `${font.weight} ${pixelSize}px ${font.css}`;
+  const width = Math.min(MAX_BITMAP_DIMENSION, Math.max(1, Math.ceil(context.measureText(text).width) + 2));
+  const height = Math.min(MAX_BITMAP_DIMENSION, Math.max(1, Math.ceil(pixelSize * 1.45) + 2));
+  canvas.width = width;
+  canvas.height = height;
+  context.clearRect(0, 0, width, height);
+  context.font = `${font.weight} ${pixelSize}px ${font.css}`;
+  context.textBaseline = 'alphabetic';
+  context.fillStyle = '#000';
+  context.fillText(text, 1, Math.ceil(pixelSize * 1.08));
+
+  const pixels = context.getImageData(0, 0, width, height).data;
+  let top = height;
+  let bottom = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (pixels[(y * width + x) * 4 + 3] >= 96) {
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+      }
+    }
+  }
+  if (bottom < top) return ['0'.repeat(width)];
+
+  return Array.from({ length: bottom - top + 1 }, (_, row) => (
+    Array.from({ length: width }, (_, column) => (
+      pixels[((top + row) * width + column) * 4 + 3] >= 96 ? '1' : '0'
+    )).join('')
+  ));
+}
+
+function overlayBitmapFrame(
+  base: BitmapFrame,
+  source: string[],
+  sourceTop: number,
+  sourceLeft: number,
+): BitmapFrame | null {
+  const width = base.rows[0].length;
+  const height = base.rows.length;
+  const sourceWidth = source[0]?.length ?? 1;
+  const sourceHeight = source.length;
+  const leftPad = Math.max(0, -sourceLeft);
+  const rightPad = Math.max(0, sourceLeft + sourceWidth - width);
+  const topPad = Math.max(0, -sourceTop);
+  const bottomPad = Math.max(0, sourceTop + sourceHeight - height);
+  const nextWidth = width + leftPad + rightPad;
+  const nextHeight = height + topPad + bottomPad;
+  if (nextWidth > MAX_BITMAP_DIMENSION || nextHeight > MAX_BITMAP_DIMENSION) return null;
+
+  const blankRow = '0'.repeat(nextWidth);
+  const rows = [
+    ...Array<string>(topPad).fill(blankRow),
+    ...base.rows.map((row) => `${'0'.repeat(leftPad)}${row}${'0'.repeat(rightPad)}`),
+    ...Array<string>(bottomPad).fill(blankRow),
+  ].map((row) => row.split(''));
+  const targetTop = sourceTop + topPad;
+  const targetLeft = sourceLeft + leftPad;
+  source.forEach((row, rowIndex) => {
+    for (let column = 0; column < sourceWidth; column += 1) {
+      if (row[column] === '1') rows[targetTop + rowIndex][targetLeft + column] = '1';
+    }
+  });
+  return {
+    rows: rows.map((row) => row.join('')),
+    offsetCells: [base.offsetCells[0] - leftPad, base.offsetCells[1] - topPad],
+  };
+}
+
 function BitmapThumbnail({
   rows,
   background,
@@ -846,16 +937,39 @@ function BitmapThumbnail({
   );
 }
 
+function PixelFontThumbnail({
+  fontId,
+  background,
+  pixel,
+}: {
+  fontId: PixelFontId;
+  background: string;
+  pixel: string;
+}) {
+  const [rows, setRows] = useState(['1']);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setRows(rasterizePixelText('Aa', fontId, 12)));
+    return () => cancelAnimationFrame(frame);
+  }, [fontId]);
+  return <BitmapThumbnail rows={rows} background={background} pixel={pixel} inverted={false} />;
+}
+
 export function LcdStudio() {
   const canvasRef = useRef<LcdCanvasHandle>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
   const bitmapRef = useRef(INITIAL_BITMAP);
   const bitmapOffsetRef = useRef<[number, number]>(INITIAL_BITMAP_OFFSET);
   const paintBaseRef = useRef<BitmapFrame | null>(null);
+  const textSessionRef = useRef<TextSession | null>(null);
 
   const [mode, setMode] = useState<LcdMode>('view');
   const [editTool, setEditTool] = useState<EditTool>('pen');
   const [selectedSpriteId, setSelectedSpriteId] = useState(CLIPBOARD_SPRITE_ID);
+  const [selectedFontId, setSelectedFontId] = useState<PixelFontId>('terminal');
+  const [textPixelSize, setTextPixelSize] = useState<(typeof TEXT_PIXEL_SIZES)[number]>(12);
+  const [textValue, setTextValue] = useState('');
+  const [textAnchor, setTextAnchor] = useState<{ row: number; column: number } | null>(null);
   const [selection, setSelection] = useState<LcdSelection | null>(null);
   const [clipboardBitmap, setClipboardBitmap] = useState<string[] | null>(null);
   const [bitmap, setBitmap] = useState(INITIAL_BITMAP);
@@ -866,6 +980,23 @@ export function LcdStudio() {
   const [exporting, setExporting] = useState(false);
   const [importingImage, setImportingImage] = useState(false);
   const [actionStatus, setActionStatus] = useState('Ready');
+
+  const stopTextSession = useCallback(() => {
+    textSessionRef.current = null;
+    setTextAnchor(null);
+    setTextValue('');
+  }, []);
+
+  const chooseMode = useCallback((nextMode: LcdMode) => {
+    if (nextMode !== 'edit') stopTextSession();
+    setMode(nextMode);
+  }, [stopTextSession]);
+
+  const chooseEditTool = (nextTool: EditTool) => {
+    if (nextTool !== 'text') stopTextSession();
+    setSelection(null);
+    setEditTool(nextTool);
+  };
 
   const replaceBitmap = useCallback((next: string[], recordHistory = true, nextOffsetCells = bitmapOffsetRef.current) => {
     const current = bitmapRef.current;
@@ -993,6 +1124,55 @@ export function LcdStudio() {
     setActionStatus(`Copied ${selectedArea.width} × ${selectedArea.height} cells`);
   }, [bitmapFromSelection]);
 
+  const renderTextSession = (
+    value: string,
+    fontId = selectedFontId,
+    pixelSize = textPixelSize,
+  ) => {
+    const session = textSessionRef.current;
+    if (!session) return;
+    const next = value
+      ? overlayBitmapFrame(session.base, rasterizePixelText(value, fontId, pixelSize), session.row, session.column)
+      : session.base;
+    if (!next) {
+      setActionStatus(`Text exceeds the ${MAX_BITMAP_DIMENSION} × ${MAX_BITMAP_DIMENSION} technical limit`);
+      return;
+    }
+    if (!session.historyRecorded && !bitmapFramesMatch(session.base, next)) {
+      session.historyRecorded = true;
+      setPast((items) => [...items, session.base].slice(-80));
+      setFuture([]);
+    }
+    replaceBitmap(next.rows, false, next.offsetCells);
+    setActionStatus(value ? `${value.length} character${value.length === 1 ? '' : 's'} placed` : 'Type text');
+  };
+
+  const beginTextAt = (row: number, column: number) => {
+    const base = { rows: bitmapRef.current, offsetCells: bitmapOffsetRef.current };
+    textSessionRef.current = { base, row, column, historyRecorded: false };
+    setTextAnchor({ row, column });
+    setTextValue('');
+    setSelection(null);
+    setActionStatus('Type text');
+    textInputRef.current?.focus({ preventScroll: true });
+    requestAnimationFrame(() => textInputRef.current?.focus());
+  };
+
+  const updateText = (value: string) => {
+    setTextValue(value);
+    renderTextSession(value);
+  };
+
+  const chooseTextFont = (fontId: PixelFontId) => {
+    setSelectedFontId(fontId);
+    renderTextSession(textValue, fontId, textPixelSize);
+  };
+
+  const chooseTextSize = (pixelSize: (typeof TEXT_PIXEL_SIZES)[number]) => {
+    setTextPixelSize(pixelSize);
+    renderTextSession(textValue, selectedFontId, pixelSize);
+  };
+
   const beginPaint = () => {
     paintBaseRef.current = {
       rows: bitmapRef.current,
@@ -1012,23 +1192,25 @@ export function LcdStudio() {
 
   const undo = useCallback(() => {
     if (past.length === 0) return;
+    stopTextSession();
     const previous = past.at(-1)!;
     const current = { rows: bitmapRef.current, offsetCells: bitmapOffsetRef.current };
     setPast((items) => items.slice(0, -1));
     setFuture((items) => [current, ...items].slice(0, 80));
     replaceBitmap(previous.rows, false, previous.offsetCells);
     setActionStatus('Undid edit');
-  }, [past, replaceBitmap]);
+  }, [past, replaceBitmap, stopTextSession]);
 
   const redo = useCallback(() => {
     if (future.length === 0) return;
+    stopTextSession();
     const next = future[0];
     const current = { rows: bitmapRef.current, offsetCells: bitmapOffsetRef.current };
     setFuture((items) => items.slice(1));
     setPast((items) => [...items, current].slice(-80));
     replaceBitmap(next.rows, false, next.offsetCells);
     setActionStatus('Redid edit');
-  }, [future, replaceBitmap]);
+  }, [future, replaceBitmap, stopTextSession]);
 
   const exportPng = async () => {
     setExporting(true);
@@ -1061,13 +1243,13 @@ export function LcdStudio() {
         return;
       }
       if (isTyping || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.key.toLowerCase() === 'v') setMode('view');
-      if (event.key.toLowerCase() === 'e') setMode('edit');
+      if (event.key.toLowerCase() === 'v') chooseMode('view');
+      if (event.key.toLowerCase() === 'e') chooseMode('edit');
       if (event.key.toLowerCase() === 'r') canvasRef.current?.resetView();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [redo, undo]);
+  }, [chooseMode, redo, undo]);
 
   const loadBitmapAction = useCallback(async (source: string) => {
     const parsed = parseBitmap(source);
@@ -1215,7 +1397,7 @@ export function LcdStudio() {
                   size="sm"
                   variant={mode === 'view' ? 'default' : 'ghost'}
                   aria-pressed={mode === 'view'}
-                  onClick={() => setMode('view')}
+                  onClick={() => chooseMode('view')}
                 >
                   <Rotate3D data-icon="inline-start" />
                   <span className="button-label">View</span>
@@ -1225,7 +1407,7 @@ export function LcdStudio() {
                   size="sm"
                   variant={mode === 'edit' ? 'default' : 'ghost'}
                   aria-pressed={mode === 'edit'}
-                  onClick={() => setMode('edit')}
+                  onClick={() => chooseMode('edit')}
                 >
                   <Pencil data-icon="inline-start" />
                   <span className="button-label">Edit</span>
@@ -1269,22 +1451,25 @@ export function LcdStudio() {
                       size="sm"
                       variant={editTool === 'pen' ? 'default' : 'ghost'}
                       aria-pressed={editTool === 'pen'}
-                      onClick={() => {
-                        setSelection(null);
-                        setEditTool('pen');
-                      }}
+                      onClick={() => chooseEditTool('pen')}
                     >
                       <Pencil data-icon="inline-start" /> Pen
                     </Button>
                     <Button
                       type="button"
                       size="sm"
+                      variant={editTool === 'text' ? 'default' : 'ghost'}
+                      aria-pressed={editTool === 'text'}
+                      onClick={() => chooseEditTool('text')}
+                    >
+                      <Type data-icon="inline-start" /> Text
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
                       variant={editTool === 'stamp' ? 'default' : 'ghost'}
                       aria-pressed={editTool === 'stamp'}
-                      onClick={() => {
-                        setSelection(null);
-                        setEditTool('stamp');
-                      }}
+                      onClick={() => chooseEditTool('stamp')}
                     >
                       <Stamp data-icon="inline-start" /> Stamp
                     </Button>
@@ -1293,10 +1478,7 @@ export function LcdStudio() {
                       size="sm"
                       variant={editTool === 'select' ? 'default' : 'ghost'}
                       aria-pressed={editTool === 'select'}
-                      onClick={() => {
-                        setSelection(null);
-                        setEditTool('select');
-                      }}
+                      onClick={() => chooseEditTool('select')}
                     >
                       <BoxSelect data-icon="inline-start" /> Select
                     </Button>
@@ -1310,6 +1492,53 @@ export function LcdStudio() {
                     </Button>
                   </fieldset>
                 </div>
+
+                {editTool === 'text' && (
+                  <div className="text-tool-panel">
+                    <fieldset className="font-picker" aria-label="Pixel font">
+                      {PIXEL_FONTS.map((font) => (
+                        <button
+                          type="button"
+                          className="font-choice"
+                          key={font.id}
+                          aria-pressed={selectedFontId === font.id}
+                          onClick={() => chooseTextFont(font.id)}
+                        >
+                          <PixelFontThumbnail fontId={font.id} background={appearance.background} pixel={appearance.pixel} />
+                          <span>{font.label}</span>
+                        </button>
+                      ))}
+                    </fieldset>
+                    <fieldset className="text-size-picker" aria-label="Text size">
+                      {TEXT_PIXEL_SIZES.map((size) => (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={textPixelSize === size ? 'default' : 'ghost'}
+                          aria-pressed={textPixelSize === size}
+                          key={size}
+                          onClick={() => chooseTextSize(size)}
+                        >
+                          {size} px
+                        </Button>
+                      ))}
+                    </fieldset>
+                    <input
+                      ref={textInputRef}
+                      className="pixel-text-input"
+                      type="text"
+                      value={textValue}
+                      maxLength={120}
+                      disabled={!textAnchor}
+                      aria-label="Text to place"
+                      placeholder={textAnchor ? 'Type…' : 'Click the display to start'}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      onChange={(event) => updateText(event.target.value)}
+                    />
+                  </div>
+                )}
 
                 {editTool === 'stamp' && (
                   <div className="sprite-library" aria-label="Sprite library">
@@ -1456,6 +1685,7 @@ export function LcdStudio() {
           selection={mode === 'edit' && editTool === 'select' ? selection : null}
           onPixelChange={setPixel}
           onStamp={stampAt}
+          onTextStart={beginTextAt}
           onSelectionChange={setSelection}
           onSelectionEnd={copySelectionToBuffer}
           onPaintStart={beginPaint}
@@ -1474,6 +1704,11 @@ export function LcdStudio() {
             <>
               <span className="mouse-gesture-hint"><strong>Drag</strong> paint · <strong>Shift</strong> pan · <strong>Option</strong> rotate · <strong>Scroll</strong> zoom</span>
               <span className="touch-gesture-hint"><strong>1 finger</strong> paints · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
+            </>
+          ) : editTool === 'text' ? (
+            <>
+              <span className="mouse-gesture-hint"><strong>Click</strong> to type · <strong>Shift</strong> pan · <strong>Option</strong> rotate · <strong>Scroll</strong> zoom</span>
+              <span className="touch-gesture-hint"><strong>Tap</strong> to type · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
             </>
           ) : editTool === 'stamp' ? (
             <>
