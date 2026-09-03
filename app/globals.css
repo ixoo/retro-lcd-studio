@@ -350,14 +350,6 @@
 .sprite-library {
   display: grid;
   width: 100%;
-  gap: 0.5rem;
-}
-
-.sprite-library > span {
-  color: #8f998f;
-  font: 650 0.625rem/1 var(--font-geist-mono), monospace;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
 }
 
 .sprite-grid {
@@ -368,11 +360,10 @@
 }
 
 .sprite-choice {
-  display: grid;
+  display: block;
   width: 100%;
   min-width: 0;
-  gap: 0.3rem;
-  padding: 0.3rem;
+  padding: 0.25rem;
   border: 1px solid #3b443d;
   border-radius: 0.5rem;
   color: #cbd3c9;
@@ -396,16 +387,6 @@
   width: 100%;
   border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 0.3rem;
-}
-
-.sprite-choice span {
-  overflow: hidden;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  line-height: 1.2;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .color-controls {
