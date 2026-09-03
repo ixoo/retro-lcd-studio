@@ -30,6 +30,7 @@ export type LcdCanvasHandle = {
 
 type LcdCanvasProps = {
   bitmap: string[];
+  bitmapOffsetCells: [number, number];
   mode: LcdMode;
   appearance: LcdAppearance;
   onPixelChange: (row: number, column: number, value: 0 | 1) => void;
@@ -149,7 +150,7 @@ struct Uniforms {
   shadowOpacity: f32,
   geometryMm: vec4<f32>,
   shadowOffsetMm: vec2<f32>,
-  padding: vec2<f32>,
+  bitmapOffsetCells: vec2<f32>,
   background: vec4<f32>,
   pixelColor: vec4<f32>,
 };
@@ -178,8 +179,8 @@ fn activePixelDistance(local: vec2<f32>) -> f32 {
   let pixelSizeMm = uniforms.geometryMm.xy;
   let pitchMm = pixelSizeMm + vec2<f32>(uniforms.geometryMm.z);
   let grid = vec2<f32>(
-    local.x / pitchMm.x + dimensions.x * 0.5,
-    dimensions.y * 0.5 - local.y / pitchMm.y
+    local.x / pitchMm.x - uniforms.bitmapOffsetCells.x,
+    -local.y / pitchMm.y - uniforms.bitmapOffsetCells.y
   );
   let cell = floor(grid);
 
@@ -270,6 +271,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
   function LcdCanvas(
     {
       bitmap,
+      bitmapOffsetCells,
       mode,
       appearance,
       onPixelChange,
@@ -281,6 +283,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const runtimeRef = useRef<GpuRuntime | null>(null);
     const bitmapRef = useRef(bitmap);
+    const bitmapOffsetRef = useRef(bitmapOffsetCells);
     const appearanceRef = useRef(appearance);
     const onPixelChangeRef = useRef(onPixelChange);
     const onPaintStartRef = useRef(onPaintStart);
@@ -321,12 +324,16 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       const height = Math.max(bitmapRef.current.length, 1);
       const pitchXMm = appearanceRef.current.pixelWidthMm + appearanceRef.current.gapMm;
       const pitchYMm = appearanceRef.current.pixelHeightMm + appearanceRef.current.gapMm;
+      const offset = bitmapOffsetRef.current;
+      const centerXMm = (offset[0] + width * 0.5) * pitchXMm;
+      const centerYMm = -(offset[1] + height * 0.5) * pitchYMm;
+      const zoom = clamp(Math.min((bounds.width - 96) / (width * pitchXMm), (bounds.height - 180) / (height * pitchYMm)) * 0.82, 8, 180);
       cameraRef.current = {
         yaw: 0,
         pitch: 0,
-        zoom: clamp(Math.min((bounds.width - 96) / (width * pitchXMm), (bounds.height - 180) / (height * pitchYMm)) * 0.82, 8, 180),
-        panX: 0,
-        panY: 0,
+        zoom,
+        panX: -centerXMm * zoom,
+        panY: -centerYMm * zoom,
         fitted: true,
       };
       scheduleDraw();
@@ -486,7 +493,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
                 projection.inv00, projection.inv01, projection.inv10, projection.inv11,
                 camera.panX * pixelRatio, camera.panY * pixelRatio, camera.zoom * pixelRatio, appearanceRef.current.shadowOpacity,
                 appearanceRef.current.pixelWidthMm, appearanceRef.current.pixelHeightMm, appearanceRef.current.gapMm, appearanceRef.current.shadowSoftnessMm,
-                appearanceRef.current.shadowOffsetMm[0], appearanceRef.current.shadowOffsetMm[1], 0, 0,
+                appearanceRef.current.shadowOffsetMm[0], appearanceRef.current.shadowOffsetMm[1], bitmapOffsetRef.current[0], bitmapOffsetRef.current[1],
                 ...background,
                 ...pixel,
               ]);
@@ -546,6 +553,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     }, [bitmap]);
 
     useEffect(() => {
+      bitmapOffsetRef.current = bitmapOffsetCells;
+      scheduleDraw();
+    }, [bitmapOffsetCells]);
+
+    useEffect(() => {
       appearanceRef.current = appearance;
       scheduleDraw();
     }, [appearance]);
@@ -567,13 +579,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       const screenY = bounds.height * 0.5 - (clientY - bounds.top) - camera.panY;
       const localX = (projection.inv00 * screenX + projection.inv01 * screenY) / camera.zoom;
       const localY = (projection.inv10 * screenX + projection.inv11 * screenY) / camera.zoom;
-      const width = bitmapRef.current[0]?.length ?? 0;
-      const height = bitmapRef.current.length;
       const pitchXMm = appearanceRef.current.pixelWidthMm + appearanceRef.current.gapMm;
       const pitchYMm = appearanceRef.current.pixelHeightMm + appearanceRef.current.gapMm;
-      const column = Math.floor(localX / pitchXMm + width * 0.5);
-      const row = Math.floor(height * 0.5 - localY / pitchYMm);
-      if (column < 0 || row < 0 || column >= width || row >= height) return null;
+      const column = Math.floor(localX / pitchXMm - bitmapOffsetRef.current[0]);
+      const row = Math.floor(-localY / pitchYMm - bitmapOffsetRef.current[1]);
+      if (!Number.isSafeInteger(column) || !Number.isSafeInteger(row)) return null;
       return { row, column };
     };
 
@@ -599,7 +609,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         const cell = cellAtPointer(event.clientX, event.clientY);
         if (!cell) return;
         kind = 'paint';
-        paintValue = bitmapRef.current[cell.row][cell.column] === '1' ? 0 : 1;
+        paintValue = bitmapRef.current[cell.row]?.[cell.column] === '1' ? 0 : 1;
       }
 
       dragRef.current = {

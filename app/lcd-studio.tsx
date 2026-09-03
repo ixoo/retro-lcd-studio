@@ -38,6 +38,11 @@ const INITIAL_BITMAP = [
   '10000010001010001',
   '11111001110011110',
 ];
+const MAX_BITMAP_DIMENSION = 4096;
+const INITIAL_BITMAP_OFFSET: [number, number] = [
+  -INITIAL_BITMAP[0].length / 2,
+  -INITIAL_BITMAP.length / 2,
+];
 
 const DEFAULT_APPEARANCE: LcdAppearance = {
   background: '#aeb5a7',
@@ -93,6 +98,11 @@ type BitmapParseResult =
   | { rows: string[]; error: null }
   | { rows: null; error: string };
 
+type BitmapFrame = {
+  rows: string[];
+  offsetCells: [number, number];
+};
+
 type BrowserTool = {
   name: string;
   title: string;
@@ -130,14 +140,24 @@ function parseBitmap(source: string): BitmapParseResult {
   if (normalized.some((row) => row.length !== width)) {
     return { rows: null, error: 'Every row must have the same width.' };
   }
-  if (width > 256 || normalized.length > 256) {
-    return { rows: null, error: 'Bitmaps are limited to 256 × 256 pixels.' };
+  if (width > MAX_BITMAP_DIMENSION || normalized.length > MAX_BITMAP_DIMENSION) {
+    return { rows: null, error: `Bitmaps are limited to ${MAX_BITMAP_DIMENSION} × ${MAX_BITMAP_DIMENSION} pixels.` };
   }
   return { rows: normalized, error: null };
 }
 
 function bitmapsMatch(first: string[], second: string[]) {
   return first.length === second.length && first.every((row, index) => row === second[index]);
+}
+
+function bitmapFramesMatch(first: BitmapFrame, second: BitmapFrame) {
+  return bitmapsMatch(first.rows, second.rows)
+    && first.offsetCells[0] === second.offsetCells[0]
+    && first.offsetCells[1] === second.offsetCells[1];
+}
+
+function centeredBitmapOffset(rows: string[]): [number, number] {
+  return [-(rows[0]?.length ?? 1) / 2, -rows.length / 2];
 }
 
 function firstSliderValue(value: number | readonly number[]) {
@@ -218,32 +238,39 @@ function ColorControl({
 export function LcdStudio() {
   const canvasRef = useRef<LcdCanvasHandle>(null);
   const bitmapRef = useRef(INITIAL_BITMAP);
-  const paintBaseRef = useRef<string[] | null>(null);
+  const bitmapOffsetRef = useRef<[number, number]>(INITIAL_BITMAP_OFFSET);
+  const paintBaseRef = useRef<BitmapFrame | null>(null);
 
   const [mode, setMode] = useState<LcdMode>('view');
   const [bitmap, setBitmap] = useState(INITIAL_BITMAP);
+  const [bitmapOffsetCells, setBitmapOffsetCells] = useState<[number, number]>(INITIAL_BITMAP_OFFSET);
   const [bitmapText, setBitmapText] = useState(INITIAL_BITMAP.join('\n'));
   const [bitmapError, setBitmapError] = useState<string | null>(null);
   const [appearance, setAppearance] = useState(DEFAULT_APPEARANCE);
-  const [past, setPast] = useState<string[][]>([]);
-  const [future, setFuture] = useState<string[][]>([]);
+  const [past, setPast] = useState<BitmapFrame[]>([]);
+  const [future, setFuture] = useState<BitmapFrame[]>([]);
   const [panelOpen, setPanelOpen] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [actionStatus, setActionStatus] = useState('Ready');
 
-  const replaceBitmap = useCallback((next: string[], recordHistory = true) => {
+  const replaceBitmap = useCallback((next: string[], recordHistory = true, nextOffsetCells = bitmapOffsetRef.current) => {
     const current = bitmapRef.current;
-    if (bitmapsMatch(current, next)) {
+    const currentOffsetCells = bitmapOffsetRef.current;
+    if (bitmapsMatch(current, next)
+      && currentOffsetCells[0] === nextOffsetCells[0]
+      && currentOffsetCells[1] === nextOffsetCells[1]) {
       setBitmapText(next.join('\n'));
       setBitmapError(null);
       return false;
     }
     if (recordHistory) {
-      setPast((items) => [...items, current].slice(-80));
+      setPast((items) => [...items, { rows: current, offsetCells: currentOffsetCells }].slice(-80));
       setFuture([]);
     }
     bitmapRef.current = next;
+    bitmapOffsetRef.current = nextOffsetCells;
     setBitmap(next);
+    setBitmapOffsetCells(nextOffsetCells);
     setBitmapText(next.join('\n'));
     setBitmapError(null);
     return true;
@@ -251,20 +278,50 @@ export function LcdStudio() {
 
   const setPixel = (row: number, column: number, value: 0 | 1) => {
     const current = bitmapRef.current;
-    if (current[row]?.[column] === String(value)) return;
-    const next = [...current];
-    next[row] = `${next[row].slice(0, column)}${value}${next[row].slice(column + 1)}`;
-    replaceBitmap(next, false);
+    const width = current[0].length;
+    const height = current.length;
+    const isOutside = row < 0 || column < 0 || row >= height || column >= width;
+    if (isOutside && value === 0) return;
+    if (!isOutside && current[row][column] === String(value)) return;
+
+    const leftPad = Math.max(0, -column);
+    const rightPad = Math.max(0, column - width + 1);
+    const topPad = Math.max(0, -row);
+    const bottomPad = Math.max(0, row - height + 1);
+    const nextWidth = width + leftPad + rightPad;
+    const nextHeight = height + topPad + bottomPad;
+    if (nextWidth > MAX_BITMAP_DIMENSION || nextHeight > MAX_BITMAP_DIMENSION) {
+      setActionStatus(`Edit exceeds the ${MAX_BITMAP_DIMENSION} × ${MAX_BITMAP_DIMENSION} technical limit`);
+      return;
+    }
+
+    const leftZeros = '0'.repeat(leftPad);
+    const rightZeros = '0'.repeat(rightPad);
+    const blankRow = '0'.repeat(nextWidth);
+    const next = [
+      ...Array<string>(topPad).fill(blankRow),
+      ...current.map((currentRow) => `${leftZeros}${currentRow}${rightZeros}`),
+      ...Array<string>(bottomPad).fill(blankRow),
+    ];
+    const nextRow = row + topPad;
+    const nextColumn = column + leftPad;
+    next[nextRow] = `${next[nextRow].slice(0, nextColumn)}${value}${next[nextRow].slice(nextColumn + 1)}`;
+    const currentOffset = bitmapOffsetRef.current;
+    replaceBitmap(next, false, [currentOffset[0] - leftPad, currentOffset[1] - topPad]);
   };
 
   const beginPaint = () => {
-    paintBaseRef.current = bitmapRef.current;
+    paintBaseRef.current = {
+      rows: bitmapRef.current,
+      offsetCells: bitmapOffsetRef.current,
+    };
   };
 
   const finishPaint = () => {
     const original = paintBaseRef.current;
     paintBaseRef.current = null;
-    if (!original || bitmapsMatch(original, bitmapRef.current)) return;
+    const current = { rows: bitmapRef.current, offsetCells: bitmapOffsetRef.current };
+    if (!original || bitmapFramesMatch(original, current)) return;
     setPast((items) => [...items, original].slice(-80));
     setFuture([]);
     setActionStatus('Bitmap edited');
@@ -273,20 +330,20 @@ export function LcdStudio() {
   const undo = useCallback(() => {
     if (past.length === 0) return;
     const previous = past.at(-1)!;
-    const current = bitmapRef.current;
+    const current = { rows: bitmapRef.current, offsetCells: bitmapOffsetRef.current };
     setPast((items) => items.slice(0, -1));
     setFuture((items) => [current, ...items].slice(0, 80));
-    replaceBitmap(previous, false);
+    replaceBitmap(previous.rows, false, previous.offsetCells);
     setActionStatus('Undid edit');
   }, [past, replaceBitmap]);
 
   const redo = useCallback(() => {
     if (future.length === 0) return;
     const next = future[0];
-    const current = bitmapRef.current;
+    const current = { rows: bitmapRef.current, offsetCells: bitmapOffsetRef.current };
     setFuture((items) => items.slice(1));
     setPast((items) => [...items, current].slice(-80));
-    replaceBitmap(next, false);
+    replaceBitmap(next.rows, false, next.offsetCells);
     setActionStatus('Redid edit');
   }, [future, replaceBitmap]);
 
@@ -297,7 +354,7 @@ export function LcdStudio() {
       setActionStatus('Bitmap needs attention');
       return;
     }
-    const changed = replaceBitmap(parsed.rows);
+    const changed = replaceBitmap(parsed.rows, true, centeredBitmapOffset(parsed.rows));
     canvasRef.current?.resetView();
     setActionStatus(changed ? 'Bitmap applied' : 'Bitmap already current');
   };
@@ -356,7 +413,7 @@ export function LcdStudio() {
   const loadBitmapAction = useCallback(async (source: string) => {
     const parsed = parseBitmap(source);
     if (!parsed.rows) throw new Error(parsed.error);
-    replaceBitmap(parsed.rows);
+    replaceBitmap(parsed.rows, true, centeredBitmapOffset(parsed.rows));
     canvasRef.current?.resetView();
     setActionStatus('Bitmap loaded by browser tool');
     await nextFrame();
@@ -460,6 +517,7 @@ export function LcdStudio() {
       <LcdCanvas
         ref={canvasRef}
         bitmap={bitmap}
+        bitmapOffsetCells={bitmapOffsetCells}
         mode={mode}
         onPixelChange={setPixel}
         onPaintStart={beginPaint}
@@ -526,9 +584,9 @@ export function LcdStudio() {
         </Button>
       </header>
 
-      <aside className="surface-readout" aria-label="Bitmap dimensions">
+      <aside className="surface-readout" aria-label="Virtual LCD surface">
         <span>MONO</span>
-        <strong>{bitmap[0].length} × {bitmap.length}</strong>
+        <strong>VIRTUAL ∞</strong>
         <i aria-hidden="true" />
       </aside>
 
