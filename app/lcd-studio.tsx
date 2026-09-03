@@ -148,7 +148,21 @@ const SPRITE_BITMAPS = [
 const CLIPBOARD_SPRITE_ID = 'clipboard';
 
 type EditTool = 'pen' | 'text' | 'stamp' | 'select';
-type PixelFontId = 'terminal' | 'typewriter' | 'block' | 'rounded' | 'narrow' | 'serif';
+type PixelFontId =
+  | 'terminal'
+  | 'typewriter'
+  | 'block'
+  | 'rounded'
+  | 'narrow'
+  | 'serif'
+  | 'silkscreen'
+  | 'tiny'
+  | 'pixelify'
+  | 'jersey'
+  | 'micro'
+  | 'arcade'
+  | 'dot'
+  | 'jacquard';
 
 const PIXEL_FONTS: Array<{ id: PixelFontId; label: string; css: string; weight: number }> = [
   { id: 'terminal', label: 'Terminal', css: 'ui-monospace, SFMono-Regular, Menlo, monospace', weight: 700 },
@@ -157,6 +171,14 @@ const PIXEL_FONTS: Array<{ id: PixelFontId; label: string; css: string; weight: 
   { id: 'rounded', label: 'Rounded', css: 'Trebuchet MS, Arial, sans-serif', weight: 700 },
   { id: 'narrow', label: 'Narrow', css: 'Arial Narrow, Helvetica Neue, sans-serif', weight: 700 },
   { id: 'serif', label: 'Serif', css: 'Georgia, Times New Roman, serif', weight: 700 },
+  { id: 'silkscreen', label: 'Silkscreen', css: 'Silkscreen, monospace', weight: 400 },
+  { id: 'tiny', label: 'Tiny', css: 'Tiny5, monospace', weight: 400 },
+  { id: 'pixelify', label: 'Pixelify', css: 'Pixelify Sans, sans-serif', weight: 700 },
+  { id: 'jersey', label: 'Jersey', css: 'Jersey 10, sans-serif', weight: 400 },
+  { id: 'micro', label: 'Micro', css: 'Micro 5, monospace', weight: 400 },
+  { id: 'arcade', label: 'Arcade', css: 'Press Start 2P, monospace', weight: 400 },
+  { id: 'dot', label: 'Dot', css: 'DotGothic16, sans-serif', weight: 400 },
+  { id: 'jacquard', label: 'Jacquard', css: 'Jacquard 12, serif', weight: 400 },
 ];
 const TEXT_PIXEL_SIZES = [6, 8, 10, 12, 16, 20, 24] as const;
 
@@ -862,6 +884,12 @@ function rasterizePixelText(text: string, fontId: PixelFontId, pixelSize: number
   ));
 }
 
+function loadPixelFont(fontId: PixelFontId, pixelSize = 16) {
+  if (typeof document === 'undefined' || !document.fonts) return Promise.resolve();
+  const font = PIXEL_FONTS.find((item) => item.id === fontId) ?? PIXEL_FONTS[0];
+  return document.fonts.load(`${font.weight} ${pixelSize}px ${font.css}`, 'Aa').then(() => undefined);
+}
+
 function overlayBitmapFrame(
   base: BitmapFrame,
   source: string[],
@@ -949,8 +977,13 @@ function PixelFontThumbnail({
 }) {
   const [rows, setRows] = useState(['1']);
   useEffect(() => {
-    const frame = requestAnimationFrame(() => setRows(rasterizePixelText('Aa', fontId, 12)));
-    return () => cancelAnimationFrame(frame);
+    let cancelled = false;
+    void loadPixelFont(fontId, 12).then(() => {
+      if (!cancelled) setRows(rasterizePixelText('Aa', fontId, 12));
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [fontId]);
   return <BitmapThumbnail rows={rows} background={background} pixel={pixel} inverted={false} />;
 }
@@ -1197,8 +1230,10 @@ export function LcdStudio() {
 
   const chooseTextFont = (fontId: PixelFontId) => {
     setSelectedFontId(fontId);
-    updateTextPreviewBitmap(textValue, fontId, textPixelSize);
-    if (textSessionRef.current) requestAnimationFrame(() => textInputRef.current?.focus());
+    void loadPixelFont(fontId, textPixelSize).then(() => {
+      updateTextPreviewBitmap(textValue, fontId, textPixelSize);
+      if (textSessionRef.current) requestAnimationFrame(() => textInputRef.current?.focus());
+    });
   };
 
   const chooseTextSize = (pixelSize: (typeof TEXT_PIXEL_SIZES)[number]) => {

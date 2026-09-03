@@ -2,6 +2,55 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 
+@font-face {
+  font-family: 'Silkscreen';
+  src: url('./fonts/silkscreen.ttf') format('truetype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Tiny5';
+  src: url('./fonts/tiny5.ttf') format('truetype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Pixelify Sans';
+  src: url('./fonts/pixelify-sans.ttf') format('truetype');
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Jersey 10';
+  src: url('./fonts/jersey-10.ttf') format('truetype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Micro 5';
+  src: url('./fonts/micro-5.ttf') format('truetype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Press Start 2P';
+  src: url('./fonts/press-start-2p.ttf') format('truetype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'DotGothic16';
+  src: url('./fonts/dot-gothic-16.ttf') format('truetype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Jacquard 12';
+  src: url('./fonts/jacquard-12.ttf') format('truetype');
+  font-display: swap;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
