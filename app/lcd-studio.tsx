@@ -406,6 +406,89 @@ function GeometryGuide({ appearance }: { appearance: LcdAppearance }) {
   );
 }
 
+function ShadowGuide({ appearance }: { appearance: LcdAppearance }) {
+  const scale = Math.min(
+    74 / appearance.pixelWidthMm,
+    74 / appearance.pixelHeightMm,
+  );
+  const pixelWidth = appearance.pixelWidthMm * scale;
+  const pixelHeight = appearance.pixelHeightMm * scale;
+  const pixelX = 150 - pixelWidth / 2;
+  const pixelY = 104 - pixelHeight / 2;
+  const offsetScale = Math.min(scale, 50);
+  const offsetX = Math.max(-24, Math.min(24, appearance.shadowOffsetMm[0] * offsetScale));
+  const offsetY = Math.max(-24, Math.min(24, -appearance.shadowOffsetMm[1] * offsetScale));
+  const shadowX = pixelX + offsetX;
+  const shadowY = pixelY + offsetY;
+  const shadowCenterX = shadowX + pixelWidth / 2;
+  const shadowCenterY = shadowY + pixelHeight / 2;
+  const pixelCenterX = pixelX + pixelWidth / 2;
+  const pixelCenterY = pixelY + pixelHeight / 2;
+  const blur = Math.min(Math.max(appearance.shadowSoftnessMm * scale, 0.05), 14);
+  const xMeasureY = 174;
+  const yMeasureX = 220;
+  const softnessTargetX = shadowX - blur * 1.35;
+  const softnessTargetY = shadowY + pixelHeight * 0.22;
+  const opacityTargetX = shadowX + pixelWidth + blur * 0.6;
+  const opacityTargetY = shadowY + pixelHeight + blur * 0.7;
+
+  return (
+    <div className="shadow-guide">
+      <svg viewBox="0 0 304 224" aria-labelledby="shadow-guide-title">
+        <title id="shadow-guide-title">Live preview of pixel shadow settings</title>
+        <defs>
+          <filter id="shadow-guide-blur" x="0" y="0" width="304" height="224" filterUnits="userSpaceOnUse">
+            <feGaussianBlur stdDeviation={blur} />
+          </filter>
+        </defs>
+        <rect className="guide-surface" x="0" y="0" width="304" height="224" rx="10" fill={appearance.background} />
+        <rect
+          x={shadowX}
+          y={shadowY}
+          width={pixelWidth}
+          height={pixelHeight}
+          rx="1"
+          fill="#000"
+          opacity={appearance.shadowOpacity}
+          filter="url(#shadow-guide-blur)"
+        />
+        <rect
+          x={pixelX}
+          y={pixelY}
+          width={pixelWidth}
+          height={pixelHeight}
+          rx="1"
+          fill={appearance.pixel}
+        />
+
+        <g className="guide-shadow-measurement" stroke={appearance.pixel} aria-hidden="true">
+          <path d={`M ${pixelCenterX} ${xMeasureY - 4} V ${xMeasureY} H ${shadowCenterX} V ${xMeasureY - 4}`} />
+          <path d={`M ${(pixelCenterX + shadowCenterX) / 2} ${xMeasureY} V 200 H 230`} />
+
+          <path d={`M ${yMeasureX - 4} ${pixelCenterY} H ${yMeasureX} V ${shadowCenterY} H ${yMeasureX - 4}`} />
+          <path d={`M ${yMeasureX} ${(pixelCenterY + shadowCenterY) / 2} H 230 V 104`} />
+
+          <path d={`M ${softnessTargetX} ${softnessTargetY} H 78 V 23`} />
+          <path d={`M ${opacityTargetX} ${opacityTargetY} H 78 V 200`} />
+        </g>
+      </svg>
+
+      <button type="button" className="guide-callout shadow-callout shadow-softness" onClick={() => focusSlider('shadow-softness')}>
+        <span>Softness</span><strong>{formatMillimetres(appearance.shadowSoftnessMm)}</strong>
+      </button>
+      <button type="button" className="guide-callout shadow-callout shadow-y" onClick={() => focusSlider('shadow-y')}>
+        <span>Y offset</span><strong>{formatMillimetres(appearance.shadowOffsetMm[1])}</strong>
+      </button>
+      <button type="button" className="guide-callout shadow-callout shadow-opacity" onClick={() => focusSlider('shadow-opacity')}>
+        <span>Opacity</span><strong>{Math.round(appearance.shadowOpacity * 100)}%</strong>
+      </button>
+      <button type="button" className="guide-callout shadow-callout shadow-x" onClick={() => focusSlider('shadow-x')}>
+        <span>X offset</span><strong>{formatMillimetres(appearance.shadowOffsetMm[0])}</strong>
+      </button>
+    </div>
+  );
+}
+
 function ColorControl({
   label,
   value,
@@ -835,6 +918,7 @@ export function LcdStudio() {
 
             <section className="control-group" aria-labelledby="shadow-heading">
               <h2 id="shadow-heading">Shadow</h2>
+              <ShadowGuide appearance={appearance} />
               <ControlSlider id="shadow-x" label="X offset" value={appearance.shadowOffsetMm[0]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[0])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [value, current.shadowOffsetMm[1]] }))} />
               <ControlSlider id="shadow-y" label="Y offset" value={appearance.shadowOffsetMm[1]} formattedValue={formatMillimetres(appearance.shadowOffsetMm[1])} min={-1} max={1} step={0.01} onChange={(value) => setAppearance((current) => ({ ...current, shadowOffsetMm: [current.shadowOffsetMm[0], value] }))} />
               <ControlSlider id="shadow-softness" label="Softness" value={appearance.shadowSoftnessMm} formattedValue={formatMillimetres(appearance.shadowSoftnessMm)} min={0} max={1} step={0.01} onChange={(shadowSoftnessMm) => setAppearance((current) => ({ ...current, shadowSoftnessMm }))} />
