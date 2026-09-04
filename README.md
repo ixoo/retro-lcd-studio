@@ -29,6 +29,8 @@ Then open [localhost:3000](http://localhost:3000).
 
 The project includes four detailed 768 × 512, true 1-bit PNGs inspired by distinct eras of vintage computing:
 
+Their editable sources are plain-text, two-color XPM files in `art/demos`. Run `npm run generate:demos` to rebuild the PNGs without scaling, antialiasing, or color conversion.
+
 | UNIX workstation | Retro gaming |
 | --- | --- |
 | ![UNIX workstation demo](public/demos/unix-workstation.png) | ![Retro gaming demo](public/demos/retro-gaming.png) |
