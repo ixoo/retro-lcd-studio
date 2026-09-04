@@ -70,6 +70,7 @@ export type LiveMotionState = {
   targetRow: number;
   targetColumn: number;
   pauseRemaining: number;
+  humanStartDistance: number;
 };
 
 export type LiveBounds = { width: number; height: number };
@@ -216,6 +217,7 @@ export function createMotionState(row: number, column: number, seed = 1): LiveMo
     targetRow: row,
     targetColumn: column,
     pauseRemaining: 0,
+    humanStartDistance: 0,
   };
 }
 
@@ -255,6 +257,7 @@ export function stepMouse(
     next.pauseRemaining = Number.isFinite(next.pauseRemaining) ? next.pauseRemaining : 0;
     next.targetRow = Number.isFinite(next.targetRow) ? next.targetRow : next.row;
     next.targetColumn = Number.isFinite(next.targetColumn) ? next.targetColumn : next.column;
+    next.humanStartDistance = Number.isFinite(next.humanStartDistance) ? next.humanStartDistance : 0;
     if (next.pauseRemaining > 0) {
       next.pauseRemaining = Math.max(0, next.pauseRemaining - deltaSeconds);
       return next;
@@ -273,9 +276,18 @@ export function stepMouse(
         next.targetColumn - next.column,
         next.targetRow - next.row,
       );
+      next.humanStartDistance = targetDistance;
     }
 
-    if (targetDistance <= distance) {
+    const remainingRatio = next.humanStartDistance > 0
+      ? Math.min(1, targetDistance / next.humanStartDistance)
+      : 1;
+    const maximumTripDistance = Math.max(1, Math.hypot(maximumColumn, maximumRow));
+    const tripRatio = Math.min(1, next.humanStartDistance / maximumTripDistance);
+    const easedDistance = distance * (
+      0.18 + (0.82 + tripRatio * 1.2) * Math.sqrt(remainingRatio)
+    );
+    if (targetDistance <= Math.max(easedDistance, 0.01)) {
       next.column = next.targetColumn;
       next.row = next.targetRow;
       next.randomState = nextRandom(next.randomState);
@@ -283,8 +295,8 @@ export function stepMouse(
       return next;
     }
     if (targetDistance > 0) {
-      next.column += (next.targetColumn - next.column) / targetDistance * distance;
-      next.row += (next.targetRow - next.row) / targetDistance * distance;
+      next.column += (next.targetColumn - next.column) / targetDistance * easedDistance;
+      next.row += (next.targetRow - next.row) / targetDistance * easedDistance;
     }
     return next;
   }

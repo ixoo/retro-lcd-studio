@@ -56,6 +56,49 @@ void test('human cursor motion picks destinations and pauses after arrival', () 
   assert.ok(paused.pauseRemaining < arrived.pauseRemaining);
 });
 
+void test('human cursor motion decelerates near its destination', () => {
+  const element: LiveMouseElement = {
+    id: 'human-easing', type: 'mouse', enabled: true, row: 1, column: 1,
+    shape: 'arrow', pattern: 'human', scale: 100, invertBorder: false, speed: 2,
+  };
+  const base = {
+    ...createMotionState(1, 1, 7),
+    targetRow: 1,
+    targetColumn: 11,
+    humanStartDistance: 10,
+  };
+  const early = stepMouse(element, base, ['1'], 0.1, bounds);
+  const earlyDistance = early.column - base.column;
+  const near = { ...base, column: 10 };
+  const late = stepMouse(element, near, ['1'], 0.1, bounds);
+  const lateDistance = late.column - near.column;
+  assert.ok(earlyDistance > lateDistance);
+  assert.ok(lateDistance > 0);
+});
+
+void test('human cursor starts faster for a more distant target', () => {
+  const element: LiveMouseElement = {
+    id: 'human-distance', type: 'mouse', enabled: true, row: 1, column: 1,
+    shape: 'arrow', pattern: 'human', scale: 100, invertBorder: false, speed: 2,
+  };
+  const base = createMotionState(1, 1, 11);
+  const shortState = {
+    ...base,
+    targetRow: 1,
+    targetColumn: 4,
+    humanStartDistance: 3,
+  };
+  const longState = {
+    ...base,
+    targetRow: 1,
+    targetColumn: 20,
+    humanStartDistance: 19,
+  };
+  const shortMove = stepMouse(element, shortState, ['1'], 0.1, bounds).column - base.column;
+  const longMove = stepMouse(element, longState, ['1'], 0.1, bounds).column - base.column;
+  assert.ok(longMove > shortMove);
+});
+
 void test('cursor border inversion separates edge and interior pixels', () => {
   const layers = cursorLayers(['111', '111', '111'], true);
   assert.deepEqual(layers.rows, ['000', '010', '000']);
