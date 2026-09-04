@@ -5,6 +5,7 @@ import {
   ballBitmap,
   clampFramePosition,
   createMotionState,
+  cursorLayers,
   formatLiveCalendar,
   formatLiveClock,
   frameCollides,
@@ -28,7 +29,7 @@ void test('clock and calendar formats are stable', () => {
 void test('mouse motion remains inside the bitmap rectangle', () => {
   const element: LiveMouseElement = {
     id: 'mouse', type: 'mouse', enabled: true, row: 0, column: 0,
-    shape: 'arrow', pattern: 'bounce', scale: 100, speed: 30,
+    shape: 'arrow', pattern: 'bounce', scale: 100, invertBorder: false, speed: 30,
   };
   const rows = ['11', '11'];
   let state = createMotionState(0, 0);
@@ -37,6 +38,12 @@ void test('mouse motion remains inside the bitmap rectangle', () => {
     assert.ok(state.row >= 0 && state.row <= bounds.height - rows.length);
     assert.ok(state.column >= 0 && state.column <= bounds.width - rows[0].length);
   }
+});
+
+void test('cursor border inversion separates edge and interior pixels', () => {
+  const layers = cursorLayers(['111', '111', '111'], true);
+  assert.deepEqual(layers.rows, ['000', '010', '000']);
+  assert.deepEqual(layers.invertedRows, ['111', '101', '111']);
 });
 
 void test('ball movement substeps and bounces before a solid obstacle', () => {

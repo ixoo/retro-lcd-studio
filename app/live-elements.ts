@@ -38,6 +38,7 @@ export type LiveMouseElement = LiveElementBase & {
   shape: CursorShapeId;
   pattern: CursorPatternId;
   scale: number;
+  invertBorder: boolean;
   speed: number;
 };
 
@@ -52,8 +53,10 @@ export type LiveElement = LiveClockElement | LiveCalendarElement | LiveMouseElem
 export type LiveSpriteFrame = {
   id: string;
   rows: string[];
+  invertedRows?: string[];
   row: number;
   column: number;
+  selected?: boolean;
 };
 
 export type LiveMotionState = {
@@ -123,6 +126,28 @@ export const CURSOR_PATTERNS: Array<{ id: CursorPatternId; label: string }> = [
   { id: 'perimeter', label: 'Perimeter' },
   { id: 'wander', label: 'Random wander' },
 ];
+
+export function cursorLayers(rows: string[], invertBorder: boolean) {
+  if (!invertBorder) return { rows, invertedRows: undefined };
+  const height = rows.length;
+  const width = Math.max(1, ...rows.map((row) => row.length));
+  const solid = Array.from({ length: height }, () => Array<string>(width).fill('0'));
+  const inverted = Array.from({ length: height }, () => Array<string>(width).fill('0'));
+  for (let row = 0; row < height; row += 1) {
+    for (let column = 0; column < width; column += 1) {
+      if (rows[row]?.[column] !== '1') continue;
+      const edge = rows[row - 1]?.[column] !== '1'
+        || rows[row + 1]?.[column] !== '1'
+        || rows[row]?.[column - 1] !== '1'
+        || rows[row]?.[column + 1] !== '1';
+      (edge ? inverted : solid)[row][column] = '1';
+    }
+  }
+  return {
+    rows: solid.map((row) => row.join('')),
+    invertedRows: inverted.map((row) => row.join('')),
+  };
+}
 
 export const CLOCK_FORMATS: Array<{ id: ClockFormat; label: string }> = [
   { id: '24-short', label: '23:59' },
@@ -292,7 +317,8 @@ export function frameContains(frame: LiveSpriteFrame, row: number, column: numbe
   return localRow >= 0 && localColumn >= 0
     && localRow < frame.rows.length
     && localColumn < (frame.rows[localRow]?.length ?? 0)
-    && frame.rows[localRow][localColumn] === '1';
+    && (frame.rows[localRow][localColumn] === '1'
+      || frame.invertedRows?.[localRow]?.[localColumn] === '1');
 }
 
 export function frameCollides(

@@ -254,8 +254,11 @@ fn activePixelDistance(local: vec2<f32>) -> f32 {
 
   let appearanceFlags = u32(uniforms.background.a + 0.5);
   let isInverted = (appearanceFlags & 1u) != 0u;
-  let compositeValue = max(pixelValue, liveValue);
-  let isRenderedOn = select(compositeValue == 1u, compositeValue == 0u, isInverted);
+  var compositeIsOn = pixelValue == 1u || (liveValue & 1u) != 0u;
+  if ((liveValue & 2u) != 0u) {
+    compositeIsOn = !compositeIsOn;
+  }
+  let isRenderedOn = select(compositeIsOn, !compositeIsOn, isInverted);
   if (!isRenderedOn) {
     return 1000.0;
   }
@@ -364,6 +367,13 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
   var color = mix(uniforms.background.rgb, uniforms.pixelColor.rgb, gridCoverage);
   color = mix(color, vec3<f32>(0.0), shadowCoverage);
   color = mix(color, uniforms.pixelColor.rgb, visiblePixelCoverage * uniforms.pixelColor.a);
+  var selectedLivePixel = false;
+  if (insideBitmapForSelection) {
+    selectedLivePixel = (textureLoad(liveTexture, vec2<i32>(selectionCell), 0).r & 4u) != 0u;
+  }
+  let selectedLivePixelCoverage = pixelCoverage * select(0.0, 1.0, selectedLivePixel);
+  let selectedLivePixelColor = mix(uniforms.background.rgb, uniforms.pixelColor.rgb, 0.48);
+  color = mix(color, selectedLivePixelColor, selectedLivePixelCoverage * 0.82);
   var stampTarget = uniforms.pixelColor.rgb;
   if (isInverted) {
     stampTarget = uniforms.background.rgb;
@@ -628,7 +638,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       resetView: fitView,
       setLiveFrames: (frames) => {
         liveFramesRef.current = frames;
-        runtimeRef.current?.replaceLiveFrames(frames);
+        runtimeRef.current?.replaceLiveFrames(frames.map((frame) => ({
+          ...frame,
+          selected: frame.id === selectedLiveElementIdRef.current,
+        })));
       },
       exportPng: async () => {
         scheduleDraw();
@@ -714,6 +727,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           let bitmapWidth = 1;
           let bitmapHeight = 1;
           let liveCounts = new Uint16Array(1);
+          let liveInvertCounts = new Uint16Array(1);
+          let liveSelectedCounts = new Uint16Array(1);
           let currentLiveFrames = new Map<string, LiveSpriteFrame>();
 
           const rebuildBindGroup = () => {
@@ -730,27 +745,38 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           };
 
           const frameKey = (frame: LiveSpriteFrame) =>
-            `${frame.row}:${frame.column}:${frame.rows.join('/')}`;
+            `${frame.row}:${frame.column}:${frame.rows.join('/')}:${frame.invertedRows?.join('/') ?? ''}:${frame.selected ? 1 : 0}`;
 
           const applyLiveFrame = (
             frame: LiveSpriteFrame,
             direction: 1 | -1,
             dirty: { minRow: number; minColumn: number; maxRow: number; maxColumn: number },
           ) => {
-            frame.rows.forEach((row, localRow) => {
-              for (let localColumn = 0; localColumn < row.length; localColumn += 1) {
-                if (row[localColumn] !== '1') continue;
+            const frameHeight = Math.max(frame.rows.length, frame.invertedRows?.length ?? 0);
+            for (let localRow = 0; localRow < frameHeight; localRow += 1) {
+              const frameWidth = Math.max(
+                frame.rows[localRow]?.length ?? 0,
+                frame.invertedRows?.[localRow]?.length ?? 0,
+              );
+              for (let localColumn = 0; localColumn < frameWidth; localColumn += 1) {
+                const isSolid = frame.rows[localRow]?.[localColumn] === '1';
+                const isInverted = frame.invertedRows?.[localRow]?.[localColumn] === '1';
+                if (!isSolid && !isInverted) continue;
                 const targetRow = frame.row + localRow;
                 const targetColumn = frame.column + localColumn;
                 if (targetRow < 0 || targetColumn < 0 || targetRow >= bitmapHeight || targetColumn >= bitmapWidth) continue;
                 const index = targetRow * bitmapWidth + targetColumn;
-                liveCounts[index] = Math.max(0, liveCounts[index] + direction);
+                if (isSolid) liveCounts[index] = Math.max(0, liveCounts[index] + direction);
+                if (isInverted) liveInvertCounts[index] = Math.max(0, liveInvertCounts[index] + direction);
+                if (frame.selected) {
+                  liveSelectedCounts[index] = Math.max(0, liveSelectedCounts[index] + direction);
+                }
                 dirty.minRow = Math.min(dirty.minRow, targetRow);
                 dirty.minColumn = Math.min(dirty.minColumn, targetColumn);
                 dirty.maxRow = Math.max(dirty.maxRow, targetRow);
                 dirty.maxColumn = Math.max(dirty.maxColumn, targetColumn);
               }
-            });
+            }
           };
 
           const uploadLiveRect = (dirty: { minRow: number; minColumn: number; maxRow: number; maxColumn: number }) => {
@@ -761,9 +787,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
             const data = new Uint8Array(bytesPerRow * height);
             for (let row = 0; row < height; row += 1) {
               for (let column = 0; column < width; column += 1) {
-                data[row * bytesPerRow + column] = liveCounts[
-                  (dirty.minRow + row) * bitmapWidth + dirty.minColumn + column
-                ] > 0 ? 1 : 0;
+                const index = (dirty.minRow + row) * bitmapWidth + dirty.minColumn + column;
+                data[row * bytesPerRow + column] = (liveCounts[index] > 0 ? 1 : 0)
+                  | (liveInvertCounts[index] > 0 ? 2 : 0)
+                  | (liveSelectedCounts[index] > 0 ? 4 : 0);
               }
             }
             device.queue.writeTexture(
@@ -825,6 +852,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
                 usage: 0x04 | 0x02,
               });
               liveCounts = new Uint16Array(bitmapWidth * bitmapHeight);
+              liveInvertCounts = new Uint16Array(bitmapWidth * bitmapHeight);
+              liveSelectedCounts = new Uint16Array(bitmapWidth * bitmapHeight);
               currentLiveFrames = new Map();
               const liveBytesPerRow = Math.ceil(bitmapWidth / 256) * 256;
               device.queue.writeTexture(
@@ -839,7 +868,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
               runtime.bindGroup = bindGroup;
               runtime.bitmapWidth = bitmapWidth;
               runtime.bitmapHeight = bitmapHeight;
-              runtime.replaceLiveFrames(liveFramesRef.current);
+              runtime.replaceLiveFrames(liveFramesRef.current.map((frame) => ({
+                ...frame,
+                selected: frame.id === selectedLiveElementIdRef.current,
+              })));
               scheduleDraw();
             },
             replaceStamp: (nextStamp) => {
@@ -1048,6 +1080,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
 
     useEffect(() => {
       selectedLiveElementIdRef.current = selectedLiveElementId;
+      runtimeRef.current?.replaceLiveFrames(liveFramesRef.current.map((frame) => ({
+        ...frame,
+        selected: frame.id === selectedLiveElementId,
+      })));
       scheduleDraw();
     }, [selectedLiveElementId]);
 

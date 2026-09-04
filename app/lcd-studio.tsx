@@ -42,6 +42,7 @@ import {
   clampFramePosition,
   CLOCK_FORMATS,
   createMotionState,
+  cursorLayers,
   CURSOR_PATTERNS,
   CURSOR_SHAPES,
   findNearestFreePosition,
@@ -1642,6 +1643,7 @@ export function LcdStudio() {
       for (const element of elements) {
         if (element.type === 'ball') continue;
         let rows: string[];
+        let invertedRows: string[] | undefined;
         let row = element.row;
         let column = element.column;
         if (element.type === 'clock' || element.type === 'calendar') {
@@ -1653,10 +1655,13 @@ export function LcdStudio() {
             ({ row, column } = clampFramePosition(rows, row, column, bounds));
           }
         } else {
-          rows = scaleBitmap(
+          const scaledRows = scaleBitmap(
             CURSOR_SHAPES.find((shape) => shape.id === element.shape)?.rows ?? CURSOR_SHAPES[0].rows,
             element.scale ?? 100,
           );
+          const layers = cursorLayers(scaledRows, element.invertBorder ?? false);
+          rows = layers.rows;
+          invertedRows = layers.invertedRows;
           let motion = liveMotionRef.current.get(element.id)
             ?? createMotionState(element.row, element.column, nextLiveIdRef.current);
           if (liveDraggingRef.current.has(element.id)) {
@@ -1668,7 +1673,7 @@ export function LcdStudio() {
           row = Math.round(motion.row);
           column = Math.round(motion.column);
         }
-        nextFrames.push({ id: element.id, rows, row, column });
+        nextFrames.push({ id: element.id, rows, invertedRows, row, column });
       }
 
       const ballFrames = elements.filter((element) => element.type === 'ball').map((element) => {
@@ -1888,7 +1893,7 @@ export function LcdStudio() {
       void loadPixelFont('tiny', size).then(() => liveTextCacheRef.current.clear());
     } else if (type === 'mouse') {
       rows = CURSOR_SHAPES[0].rows;
-      element = { id, type, enabled: true, shape: 'arrow', pattern: 'bounce', scale: 100, speed: 4, row: 0, column: 0 };
+      element = { id, type, enabled: true, shape: 'arrow', pattern: 'bounce', scale: 100, invertBorder: false, speed: 4, row: 0, column: 0 };
     } else {
       rows = ballBitmap(3);
       element = { id, type, enabled: true, size: 3, speed: 4, row: 0, column: 0 };
@@ -2956,6 +2961,18 @@ export function LcdStudio() {
                         step={25}
                         onChange={(scale) => updateLiveMouseElement(selectedLiveElement.id, { scale })}
                       />
+                      <div className="toggle-control">
+                        <label htmlFor="live-mouse-invert-border">Invert cursor border</label>
+                        <Switch
+                          id="live-mouse-invert-border"
+                          checked={selectedLiveElement.invertBorder ?? false}
+                          aria-label="Invert cursor border"
+                          onCheckedChange={(invertBorder) => updateLiveMouseElement(
+                            selectedLiveElement.id,
+                            { invertBorder },
+                          )}
+                        />
+                      </div>
                       <label className="live-field">
                         <span>Motion</span>
                         <select value={selectedLiveElement.pattern} onChange={(event) => updateLiveElement(selectedLiveElement.id, { pattern: event.target.value as CursorPatternId } as Partial<LiveElement>)}>
