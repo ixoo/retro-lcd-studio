@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BoxSelect,
   CalendarDays,
+  Check,
   Circle,
   Clock3,
+  CornerDownLeft,
   Download,
   FolderOpen,
   ImagePlus,
@@ -20,12 +22,14 @@ import {
   Redo2,
   Rotate3D,
   RotateCcw,
+  RotateCw,
   Settings2,
   Square,
   Stamp,
   Trash2,
   Type,
   Undo2,
+  X,
 } from 'lucide-react';
 
 import {
@@ -1582,6 +1586,7 @@ export function LcdStudio() {
   const [selectedSpriteId, setSelectedSpriteId] = useState(CLIPBOARD_SPRITE_ID);
   const [stampScalePercent, setStampScalePercent] = useState(100);
   const [stampQuarterTurns, setStampQuarterTurns] = useState(0);
+  const [geometryConstrained, setGeometryConstrained] = useState(false);
   const [selectedFontId, setSelectedFontId] = useState<PixelFontId>('terminal');
   const [textPixelSize, setTextPixelSize] = useState(12);
   const [textValue, setTextValue] = useState('');
@@ -1756,6 +1761,7 @@ export function LcdStudio() {
   const chooseMode = useCallback((nextMode: LcdMode) => {
     if (nextMode !== 'edit') stopTextSession();
     if (nextMode !== 'edit') {
+      setGeometryConstrained(false);
       setGeometryPreview(null);
       setPolygonPoints([]);
     }
@@ -1965,6 +1971,7 @@ export function LcdStudio() {
 
   const chooseEditTool = (nextTool: LcdEditTool) => {
     if (nextTool !== 'text') stopTextSession();
+    setGeometryConstrained(false);
     setSelection(null);
     setGeometryPreview(null);
     setPolygonPoints([]);
@@ -1987,6 +1994,13 @@ export function LcdStudio() {
     setStampQuarterTurns(next);
     setActionStatus(`Stamp rotation: ${next * 90}°`);
   }, [stampQuarterTurns]);
+
+  const toggleGeometryConstraint = () => {
+    const next = !geometryConstrained;
+    setGeometryConstrained(next);
+    const label = editTool === 'line' ? 'Line snapping' : editTool === 'rectangle' ? 'Square' : 'Circle';
+    setActionStatus(`${label}: ${next ? 'on' : 'off'}`);
+  };
 
   const replaceBitmap = useCallback((next: string[], recordHistory = true, nextOffsetCells = bitmapOffsetRef.current) => {
     const current = bitmapRef.current;
@@ -2255,6 +2269,12 @@ export function LcdStudio() {
   const updateText = (value: string) => {
     setTextValue(value);
     updateTextPreviewBitmap(value);
+  };
+
+  const addTextLine = () => {
+    if (!textSessionRef.current) return;
+    updateText(`${textValue}\n`);
+    requestAnimationFrame(() => textInputRef.current?.focus({ preventScroll: true }));
   };
 
   const moveTextTo = (row: number, column: number) => {
@@ -3117,6 +3137,7 @@ export function LcdStudio() {
           bitmapOffsetCells={bitmapOffsetCells}
           mode={mode}
           editTool={editTool}
+          geometryConstrained={geometryConstrained}
           textCursorSize={textCursorSize}
           textAnchor={textAnchor}
           geometryPreviewAnchor={geometryPreview
@@ -3155,6 +3176,45 @@ export function LcdStudio() {
           appearance={appearance}
         />
 
+        {mode !== 'view' && (
+          <nav className="touch-action-dock" aria-label="Touch actions">
+            {mode === 'edit' && editTool === 'stamp' && (
+              <Button type="button" size="sm" variant="outline" onClick={rotateStamp}>
+                <RotateCw /> Rotate
+              </Button>
+            )}
+            {mode === 'edit' && (editTool === 'line' || editTool === 'rectangle' || editTool === 'ellipse') && (
+              <Button
+                type="button"
+                size="sm"
+                variant={geometryConstrained ? 'default' : 'outline'}
+                aria-pressed={geometryConstrained}
+                onClick={toggleGeometryConstraint}
+              >
+                {editTool === 'line' ? 'Snap' : editTool === 'rectangle' ? 'Square' : 'Circle'}
+              </Button>
+            )}
+            {mode === 'edit' && editTool === 'polygon' && polygonPoints.length > 0 && (
+              <Button type="button" size="sm" variant="default" disabled={polygonPoints.length < 3} onClick={commitPolygon}>
+                <Check /> Close
+              </Button>
+            )}
+            {mode === 'edit' && editTool === 'text' && textAnchor && (
+              <>
+                <Button type="button" size="sm" variant="outline" onClick={addTextLine}>
+                  <CornerDownLeft /> New line
+                </Button>
+                <Button type="button" size="sm" variant="default" onClick={commitText}>
+                  <Check /> Place
+                </Button>
+              </>
+            )}
+            <Button type="button" size="sm" variant="outline" onClick={() => chooseMode('view')}>
+              <X /> Done
+            </Button>
+          </nav>
+        )}
+
         {showGestureHint && <div className="gesture-hint" aria-live="polite">
           <MousePointer2 aria-hidden="true" />
           {mode === 'view' ? (
@@ -3165,7 +3225,7 @@ export function LcdStudio() {
           ) : mode === 'live' ? (
             <>
               <span className="mouse-gesture-hint"><strong>Drag an element</strong> move · <strong>Drag empty space</strong> tilt · <strong>Shift</strong> pan · <strong>Esc</strong> view</span>
-              <span className="touch-gesture-hint"><strong>Drag an element</strong> move · <strong>2 fingers</strong> navigate · <strong>Esc</strong> view</span>
+              <span className="touch-gesture-hint"><strong>Drag an element</strong> move · <strong>2 fingers</strong> navigate · <strong>Done</strong> view</span>
             </>
           ) : editTool === 'pen' ? (
             <>
@@ -3175,27 +3235,27 @@ export function LcdStudio() {
           ) : editTool === 'text' ? (
             <>
               <span className="mouse-gesture-hint"><strong>Click</strong> to type · <strong>Shift+Enter</strong> line · <strong>Enter</strong> stamp · <strong>Esc</strong> view</span>
-              <span className="touch-gesture-hint"><strong>Tap</strong> to type · <strong>Drag</strong> position · <strong>Enter</strong> stamp</span>
+              <span className="touch-gesture-hint"><strong>Tap</strong> to type · <strong>Drag</strong> position · use actions to place</span>
             </>
           ) : editTool === 'stamp' ? (
             <>
               <span className="mouse-gesture-hint"><strong>Click</strong> stamp · <strong>R</strong> rotate · <strong>Shift+Scroll</strong> scale · <strong>Scroll</strong> zoom · <strong>Esc</strong> view</span>
-              <span className="touch-gesture-hint"><strong>Tap</strong> stamp · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
+              <span className="touch-gesture-hint"><strong>Tap</strong> stamp · <strong>Rotate</strong> turns stamp · <strong>2 fingers</strong> navigate</span>
             </>
           ) : editTool === 'line' ? (
             <>
               <span className="mouse-gesture-hint"><strong>Drag</strong> line · <strong>Shift</strong> snap · <strong>Esc</strong> view</span>
-              <span className="touch-gesture-hint"><strong>Drag</strong> line · <strong>2 fingers</strong> navigate</span>
+              <span className="touch-gesture-hint"><strong>Drag</strong> line · <strong>Snap</strong> constrains angle · <strong>2 fingers</strong> navigate</span>
             </>
           ) : editTool === 'rectangle' ? (
             <>
               <span className="mouse-gesture-hint"><strong>Drag</strong> rectangle · <strong>Shift</strong> square · <strong>Esc</strong> view</span>
-              <span className="touch-gesture-hint"><strong>Drag</strong> rectangle · <strong>2 fingers</strong> navigate</span>
+              <span className="touch-gesture-hint"><strong>Drag</strong> rectangle · <strong>Square</strong> locks proportions</span>
             </>
           ) : editTool === 'ellipse' ? (
             <>
               <span className="mouse-gesture-hint"><strong>Drag</strong> ellipse · <strong>Shift</strong> circle · <strong>Esc</strong> view</span>
-              <span className="touch-gesture-hint"><strong>Drag</strong> ellipse · <strong>2 fingers</strong> navigate</span>
+              <span className="touch-gesture-hint"><strong>Drag</strong> ellipse · <strong>Circle</strong> locks proportions</span>
             </>
           ) : editTool === 'polygon' ? (
             <>

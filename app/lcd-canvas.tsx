@@ -45,6 +45,7 @@ type LcdCanvasProps = {
   bitmapOffsetCells: [number, number];
   mode: LcdMode;
   editTool: LcdEditTool;
+  geometryConstrained: boolean;
   stampBitmap: string[];
   geometryPreviewAnchor: { row: number; column: number } | null;
   textCursorSize: [number, number];
@@ -496,6 +497,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       bitmapOffsetCells,
       mode,
       editTool,
+      geometryConstrained,
       stampBitmap,
       geometryPreviewAnchor,
       textCursorSize,
@@ -556,6 +558,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const onPaintEndRef = useRef(onPaintEnd);
     const modeRef = useRef(mode);
     const editToolRef = useRef(editTool);
+    const geometryConstrainedRef = useRef(geometryConstrained);
     const stampPreviewCellRef = useRef<{ row: number; column: number } | null>(null);
     const textCursorCellRef = useRef<{ row: number; column: number } | null>(null);
     const textCursorVisibleRef = useRef(true);
@@ -1112,6 +1115,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       onPaintEndRef.current = onPaintEnd;
       modeRef.current = mode;
       editToolRef.current = editTool;
+      geometryConstrainedRef.current = geometryConstrained;
       if (mode !== 'live' && dragRef.current?.kind === 'live') {
         if (dragRef.current.liveElementId) {
           onLiveDragStateRef.current(dragRef.current.liveElementId, false);
@@ -1126,7 +1130,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         textCursorCellRef.current = null;
         scheduleDraw();
       }
-    }, [editTool, mode, onGeometryCancel, onGeometryCommit, onGeometryHover, onGeometryPoint, onGeometryPreview, onLiveDragState, onLiveMove, onLiveSelect, onPaintEnd, onPaintStart, onPixelChange, onSelectionChange, onSelectionEnd, onStamp, onStampScale, onTextMove, onTextStart]);
+    }, [editTool, geometryConstrained, mode, onGeometryCancel, onGeometryCommit, onGeometryHover, onGeometryPoint, onGeometryPreview, onLiveDragState, onLiveMove, onLiveSelect, onPaintEnd, onPaintStart, onPixelChange, onSelectionChange, onSelectionEnd, onStamp, onStampScale, onTextMove, onTextStart]);
 
     useEffect(() => {
       if (mode !== 'edit' || editTool !== 'text') {
@@ -1281,7 +1285,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
 
       const shouldConstrainGeometry = modeRef.current === 'edit'
         && isDragGeometryTool(editToolRef.current)
-        && event.shiftKey;
+        && (event.shiftKey || geometryConstrainedRef.current);
       const shouldPan = (event.shiftKey && !shouldConstrainGeometry) || event.button === 1 || event.button === 2;
       const shouldRoll = event.altKey && !shouldPan;
       let kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'text' | 'text-move' | 'stamp' | 'select' | 'geometry' | 'polygon' | 'fill' | 'live' = shouldPan
@@ -1344,7 +1348,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         textDragCell: kind === 'text-move' ? cellAtPointer(event.clientX, event.clientY) ?? undefined : undefined,
         textDragAnchor: kind === 'text-move' ? textAnchorRef.current ?? undefined : undefined,
         geometryAnchor: kind === 'geometry' ? cellAtPointer(event.clientX, event.clientY) ?? undefined : undefined,
-        geometryConstrain: kind === 'geometry' ? event.shiftKey : undefined,
+        geometryConstrain: kind === 'geometry' ? shouldConstrainGeometry : undefined,
         liveElementId,
         liveDragOffset,
       };
@@ -1363,7 +1367,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       } else if (kind === 'select' && dragRef.current.selectionAnchor) {
         updateSelection(dragRef.current.selectionAnchor, dragRef.current.selectionAnchor);
       } else if (kind === 'geometry' && dragRef.current.geometryAnchor) {
-        onGeometryPreviewRef.current(dragRef.current.geometryAnchor, dragRef.current.geometryAnchor, event.shiftKey);
+        onGeometryPreviewRef.current(dragRef.current.geometryAnchor, dragRef.current.geometryAnchor, shouldConstrainGeometry);
       }
     };
 
@@ -1453,8 +1457,9 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       } else if (drag.kind === 'geometry' && drag.geometryAnchor) {
         const cell = cellAtPointer(event.clientX, event.clientY);
         if (cell) {
-          drag.geometryConstrain = event.shiftKey;
-          onGeometryPreviewRef.current(drag.geometryAnchor, cell, event.shiftKey);
+          const constrain = event.shiftKey || geometryConstrainedRef.current;
+          drag.geometryConstrain = constrain;
+          onGeometryPreviewRef.current(drag.geometryAnchor, cell, constrain);
         }
       } else if (drag.kind === 'live' && drag.liveElementId && drag.liveDragOffset) {
         const cell = cellAtPointer(event.clientX, event.clientY);

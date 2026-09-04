@@ -1027,6 +1027,10 @@
   display: none;
 }
 
+.touch-action-dock {
+  display: none;
+}
+
 @media (max-width: 760px) {
   .lcd-app {
     grid-template-columns: minmax(0, 1fr);
@@ -1084,7 +1088,33 @@
 
 }
 
-@media (pointer: coarse) {
+@media (pointer: coarse), (max-width: 760px) {
+  .touch-action-dock {
+    position: absolute;
+    z-index: 4;
+    right: max(0.7rem, env(safe-area-inset-right));
+    bottom: max(0.7rem, env(safe-area-inset-bottom));
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.4rem;
+    max-width: calc(100% - 1.4rem);
+    padding: 0.35rem;
+    border: 1px solid rgb(215 255 69 / 18%);
+    border-radius: 0.75rem;
+    background: rgb(18 22 19 / 88%);
+    box-shadow: 0 0.6rem 1.8rem rgb(16 20 17 / 24%);
+    backdrop-filter: blur(0.7rem);
+  }
+
+  .touch-action-dock + .gesture-hint {
+    bottom: 4.6rem;
+  }
+
+  .touch-action-dock button {
+    min-height: 2.75rem;
+  }
+
   .panel-toolbar button,
   .edit-tool-palette button,
   .live-add-menu button,
