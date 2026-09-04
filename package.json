@@ -8,7 +8,6 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
-    "design:demos": "node scripts/create-demo-xpms.mjs && node scripts/build-demo-pngs.mjs",
     "generate:demos": "node scripts/build-demo-pngs.mjs",
     "start": "vinext start",
     "test": "node --experimental-strip-types --test app/live-elements.test.ts",

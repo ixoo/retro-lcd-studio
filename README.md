@@ -31,8 +31,6 @@ The project includes four detailed 768 × 512, true 1-bit PNGs inspired by disti
 
 Their editable sources are plain-text, two-color XPM files in `art/demos`. Run `npm run generate:demos` to rebuild the PNGs without scaling, antialiasing, or color conversion.
 
-The screens are hand-composed from grid-native primitives in `scripts/create-demo-xpms.mjs`; run `npm run design:demos` to redraw the XPM sources and rebuild every PNG.
-
 | UNIX workstation | Retro gaming |
 | --- | --- |
 | ![UNIX workstation demo](public/demos/unix-workstation.png) | ![Retro gaming demo](public/demos/retro-gaming.png) |
