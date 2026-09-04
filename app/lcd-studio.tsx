@@ -1424,6 +1424,42 @@ function overlayBitmapFrame(
   };
 }
 
+function expandBitmapForFrame(
+  base: BitmapFrame,
+  source: string[],
+  sourceTop: number,
+  sourceLeft: number,
+) {
+  const width = base.rows[0].length;
+  const height = base.rows.length;
+  const sourceWidth = Math.max(1, ...source.map((row) => row.length));
+  const sourceHeight = Math.max(1, source.length);
+  const leftPad = Math.max(0, -sourceLeft);
+  const rightPad = Math.max(0, sourceLeft + sourceWidth - width);
+  const topPad = Math.max(0, -sourceTop);
+  const bottomPad = Math.max(0, sourceTop + sourceHeight - height);
+  const nextWidth = width + leftPad + rightPad;
+  const nextHeight = height + topPad + bottomPad;
+  if (nextWidth > MAX_BITMAP_DIMENSION || nextHeight > MAX_BITMAP_DIMENSION) return null;
+  if (leftPad === 0 && rightPad === 0 && topPad === 0 && bottomPad === 0) {
+    return { frame: base, leftPad, topPad };
+  }
+
+  const blankRow = '0'.repeat(nextWidth);
+  return {
+    frame: {
+      rows: [
+        ...Array<string>(topPad).fill(blankRow),
+        ...base.rows.map((row) => `${'0'.repeat(leftPad)}${row}${'0'.repeat(rightPad)}`),
+        ...Array<string>(bottomPad).fill(blankRow),
+      ],
+      offsetCells: [base.offsetCells[0] - leftPad, base.offsetCells[1] - topPad] as [number, number],
+    },
+    leftPad,
+    topPad,
+  };
+}
+
 function BitmapThumbnail({
   rows,
   background,
@@ -1701,20 +1737,71 @@ export function LcdStudio() {
     });
   }, []);
 
+  const expandForLiveFrame = useCallback((rows: string[], row: number, column: number) => {
+    const expansion = expandBitmapForFrame(
+      { rows: bitmapRef.current, offsetCells: bitmapOffsetRef.current },
+      rows,
+      Math.round(row),
+      Math.round(column),
+    );
+    if (!expansion) {
+      setActionStatus(`Live element exceeds the ${MAX_BITMAP_DIMENSION} × ${MAX_BITMAP_DIMENSION} technical limit`);
+      return null;
+    }
+
+    const { frame, leftPad, topPad } = expansion;
+    if (leftPad > 0 || topPad > 0 || frame.rows !== bitmapRef.current) {
+      bitmapRef.current = frame.rows;
+      bitmapOffsetRef.current = frame.offsetCells;
+      setBitmap(frame.rows);
+      setBitmapOffsetCells(frame.offsetCells);
+
+      if (leftPad > 0 || topPad > 0) {
+        const shifted = liveElementsRef.current.map((element) => ({
+          ...element,
+          row: element.row + topPad,
+          column: element.column + leftPad,
+        }));
+        liveElementsRef.current = shifted;
+        setLiveElements(shifted);
+        liveFramesRef.current = liveFramesRef.current.map((liveFrame) => ({
+          ...liveFrame,
+          row: liveFrame.row + topPad,
+          column: liveFrame.column + leftPad,
+        }));
+        canvasRef.current?.setLiveFrames(liveFramesRef.current);
+        liveMotionRef.current.forEach((motion, id) => {
+          liveMotionRef.current.set(id, {
+            ...motion,
+            row: motion.row + topPad,
+            column: motion.column + leftPad,
+          });
+        });
+      }
+      setActionStatus(`LCD expanded to ${frame.rows[0].length} × ${frame.rows.length}`);
+    }
+    return {
+      row: Math.round(row) + topPad,
+      column: Math.round(column) + leftPad,
+    };
+  }, []);
+
   const moveLiveElement = useCallback((id: string, row: number, column: number) => {
     if (!Number.isFinite(row) || !Number.isFinite(column)) return;
     const frame = liveFramesRef.current.find((item) => item.id === id);
-    const bounds = {
-      width: bitmapRef.current[0]?.length ?? 1,
-      height: bitmapRef.current.length || 1,
-    };
-    const position = frame
-      ? clampFramePosition(frame.rows, row, column, bounds)
-      : { row: Math.round(row), column: Math.round(column) };
+    const element = liveElementsRef.current.find((item) => item.id === id);
+    if (!element) return;
+    const rows = frame?.rows ?? (element.type === 'clock' || element.type === 'calendar'
+      ? liveTextRows(element, new Date(liveDisplayTimeRef.current || Date.now()), liveTextCacheRef.current)
+      : element.type === 'mouse'
+        ? CURSOR_SHAPES.find((shape) => shape.id === element.shape)?.rows ?? CURSOR_SHAPES[0].rows
+        : ballBitmap(element.size));
+    const position = expandForLiveFrame(rows, row, column);
+    if (!position) return;
     updateLiveElement(id, position);
     const motion = liveMotionRef.current.get(id);
     if (motion) liveMotionRef.current.set(id, { ...motion, ...position });
-  }, [updateLiveElement]);
+  }, [expandForLiveFrame, updateLiveElement]);
 
   const setLiveDragState = useCallback((id: string, dragging: boolean) => {
     if (dragging) liveDraggingRef.current.add(id);
@@ -1752,20 +1839,24 @@ export function LcdStudio() {
     }
 
     const preferred = {
-      row: Math.max(0, Math.round((height - rows.length) / 2)),
-      column: Math.max(0, Math.round((width - (rows[0]?.length ?? 1)) / 2)),
+      row: Math.round((height - rows.length) / 2),
+      column: Math.round((width - (rows[0]?.length ?? 1)) / 2),
     };
+    const expandedPosition = expandForLiveFrame(rows, preferred.row, preferred.column);
+    if (!expandedPosition) return;
+    const expandedWidth = bitmapRef.current[0]?.length ?? 1;
+    const expandedHeight = bitmapRef.current.length || 1;
     const existingFrames = liveFramesRef.current;
     const position = type === 'ball'
       ? findNearestFreePosition(
           rows,
-          preferred.row,
-          preferred.column,
-          { width, height },
+          expandedPosition.row,
+          expandedPosition.column,
+          { width: expandedWidth, height: expandedHeight },
           (row, column) => bitmapRef.current[row]?.[column] === '1'
             || existingFrames.some((frame) => frameContains(frame, row, column)),
-        ) ?? preferred
-      : preferred;
+        ) ?? expandedPosition
+      : expandedPosition;
     element = { ...element, ...position } as LiveElement;
     const next = [...liveElementsRef.current, element];
     liveElementsRef.current = next;
@@ -1775,7 +1866,7 @@ export function LcdStudio() {
     setLiveAddOpen(false);
     setMode('live');
     setActionStatus(`${type[0].toUpperCase()}${type.slice(1)} added`);
-  }, []);
+  }, [expandForLiveFrame]);
 
   const removeLiveElement = useCallback((id: string) => {
     const next = liveElementsRef.current.filter((element) => element.id !== id);
