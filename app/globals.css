@@ -179,6 +179,10 @@
   cursor: cell;
 }
 
+.lcd-canvas-wrap[data-mode='live'] .lcd-canvas {
+  cursor: move;
+}
+
 .lcd-canvas:active {
   cursor: grabbing;
 }
@@ -806,6 +810,209 @@
   width: 100%;
 }
 
+.live-workspace {
+  gap: 0.75rem;
+  padding-top: 0.35rem;
+}
+
+.live-heading-row,
+.live-master-actions,
+.live-element-row,
+.live-element-select,
+.live-position,
+.live-position label,
+.live-field {
+  display: flex;
+  align-items: center;
+}
+
+.live-heading-row {
+  justify-content: space-between;
+}
+
+.live-master-actions {
+  gap: 0.3rem;
+}
+
+.live-add-menu {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0.45rem;
+  border: 1px solid #343c36;
+  border-radius: 0.65rem;
+  background: #202522;
+}
+
+.live-add-menu button {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.4rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 0.45rem;
+  color: #c8d0c7;
+  background: #292f2b;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.live-add-menu button:hover,
+.live-add-menu button:focus-visible {
+  border-color: #687269;
+  color: #f2f5ef;
+}
+
+.live-add-menu svg,
+.live-element-select svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.live-empty {
+  display: grid;
+  place-items: center;
+  gap: 0.45rem;
+  min-height: 7rem;
+  padding: 1rem;
+  border: 1px dashed #3b443d;
+  border-radius: 0.65rem;
+  color: #8f998f;
+  text-align: center;
+  font-size: 0.76rem;
+}
+
+.live-empty-pixels {
+  color: #59635a;
+  font: 700 0.8rem/1 var(--font-geist-mono), monospace;
+  letter-spacing: 0.2rem;
+}
+
+.live-element-list {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.live-element-row {
+  gap: 0.35rem;
+  min-height: 2.55rem;
+  padding: 0.2rem 0.25rem 0.2rem 0.2rem;
+  border: 1px solid #303832;
+  border-radius: 0.55rem;
+  background: #202522;
+}
+
+.live-element-row[data-selected='true'] {
+  border-color: #789036;
+  background: #252c25;
+  box-shadow: inset 3px 0 #d7ff45;
+}
+
+.live-element-select {
+  min-width: 0;
+  flex: 1;
+  gap: 0.55rem;
+  align-self: stretch;
+  padding: 0 0.45rem;
+  border: 0;
+  color: #dce2d9;
+  background: transparent;
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.live-settings {
+  display: grid;
+  gap: 0.9rem;
+  padding: 0.85rem;
+  border: 1px solid #343c36;
+  border-radius: 0.65rem;
+  background: #1d221f;
+}
+
+.live-field {
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: #bdc5bc;
+  font-size: 0.8rem;
+}
+
+.live-field select,
+.live-position input {
+  min-width: 0;
+  height: 2rem;
+  border: 1px solid #424b44;
+  border-radius: 0.4rem;
+  color: #edf1e9;
+  background: #252b27;
+  font: 550 0.72rem/1 var(--font-geist-mono), monospace;
+}
+
+.live-field select {
+  width: 10rem;
+  padding: 0 1.8rem 0 0.55rem;
+}
+
+.live-cursor-picker {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.live-cursor-picker button {
+  min-width: 0;
+  padding: 0.25rem;
+  border: 1px solid #3b443d;
+  border-radius: 0.45rem;
+  background: #252b27;
+  cursor: pointer;
+}
+
+.live-cursor-picker button[aria-pressed='true'] {
+  border-color: #d7ff45;
+  box-shadow: 0 0 0 1px rgb(215 255 69 / 18%);
+}
+
+.live-cursor-picker svg {
+  display: block;
+  width: 100%;
+  height: 3rem;
+}
+
+.live-position {
+  gap: 0.5rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid #303832;
+}
+
+.live-position label {
+  min-width: 0;
+  flex: 1;
+  gap: 0.35rem;
+  color: #8f998f;
+  font-size: 0.7rem;
+}
+
+.live-position input {
+  width: 100%;
+  padding: 0 0.45rem;
+}
+
+.live-warning {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #6f6334;
+  border-radius: 0.45rem;
+  color: #e6d991;
+  background: #302d1f;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
 .status-announcer {
   position: absolute;
   width: 1px;
@@ -912,6 +1119,9 @@
 @media (pointer: coarse) {
   .panel-toolbar button,
   .edit-tool-palette button,
+  .live-add-menu button,
+  .live-element-row,
+  .live-cursor-picker button,
   .guide-callout,
   .sprite-choice,
   .font-choice,

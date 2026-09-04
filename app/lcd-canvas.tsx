@@ -7,8 +7,9 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { LiveSpriteFrame } from '@/app/live-elements';
 
-export type LcdMode = 'view' | 'edit';
+export type LcdMode = 'view' | 'edit' | 'live';
 export type LcdEditTool = 'pen' | 'text' | 'stamp' | 'select' | 'line' | 'rectangle' | 'ellipse' | 'polygon' | 'fill';
 
 export type LcdSelection = {
@@ -36,6 +37,7 @@ export type LcdAppearance = {
 export type LcdCanvasHandle = {
   resetView: () => void;
   exportPng: () => Promise<Blob | null>;
+  setLiveFrames: (frames: LiveSpriteFrame[]) => void;
 };
 
 type LcdCanvasProps = {
@@ -49,10 +51,14 @@ type LcdCanvasProps = {
   textAnchor: { row: number; column: number } | null;
   textCursorAnchor: { row: number; column: number } | null;
   selection: LcdSelection | null;
+  selectedLiveElementId: string | null;
   appearance: LcdAppearance;
   onPixelChange: (row: number, column: number, value: 0 | 1) => void;
   onStamp: (row: number, column: number) => void;
   onStampScale: (steps: number) => void;
+  onLiveSelect: (id: string | null) => void;
+  onLiveMove: (id: string, row: number, column: number) => void;
+  onLiveDragState: (id: string, dragging: boolean) => void;
   onTextStart: (row: number, column: number) => void;
   onTextMove: (row: number, column: number) => void;
   onGeometryPreview: (start: { row: number; column: number }, end: { row: number; column: number }, constrain: boolean) => void;
@@ -117,7 +123,7 @@ type LocalGpuPipeline = {
 type LocalGpuDevice = {
   queue: {
     writeTexture: (
-      destination: { texture: LocalGpuTexture },
+      destination: { texture: LocalGpuTexture; origin?: [number, number, number] },
       data: Uint8Array,
       layout: { bytesPerRow: number; rowsPerImage: number },
       size: { width: number; height: number; depthOrArrayLayers: number },
@@ -157,6 +163,7 @@ type GpuRuntime = {
   pipeline: LocalGpuPipeline;
   uniformBuffer: LocalGpuBuffer;
   bitmapTexture: LocalGpuTexture | null;
+  liveTexture: LocalGpuTexture | null;
   bindGroup: LocalGpuBindGroup | null;
   bitmapWidth: number;
   bitmapHeight: number;
@@ -164,6 +171,7 @@ type GpuRuntime = {
   draw: () => void;
   replaceBitmap: (bitmap: string[]) => void;
   replaceStamp: (bitmap: string[]) => void;
+  replaceLiveFrames: (frames: LiveSpriteFrame[]) => void;
   destroy: () => void;
 };
 
@@ -188,11 +196,13 @@ struct Uniforms {
   stampPreview: vec4<f32>,
   selection: vec4<f32>,
   textCursor: vec4<f32>,
+  liveSelection: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var bitmapTexture: texture_2d<u32>;
 @group(0) @binding(2) var stampTexture: texture_2d<u32>;
+@group(0) @binding(3) var liveTexture: texture_2d<u32>;
 
 struct VertexOutput {
   @builtin(position) position: vec4<f32>,
@@ -235,14 +245,17 @@ fn activePixelDistance(local: vec2<f32>) -> f32 {
   let insideBitmap = cell.x >= 0.0 && cell.y >= 0.0
     && cell.x < dimensions.x && cell.y < dimensions.y;
   var pixelValue = 0u;
+  var liveValue = 0u;
 
   if (insideBitmap) {
     pixelValue = textureLoad(bitmapTexture, vec2<i32>(cell), 0).r;
+    liveValue = textureLoad(liveTexture, vec2<i32>(cell), 0).r;
   }
 
   let appearanceFlags = u32(uniforms.background.a + 0.5);
   let isInverted = (appearanceFlags & 1u) != 0u;
-  let isRenderedOn = select(pixelValue == 1u, pixelValue == 0u, isInverted);
+  let compositeValue = max(pixelValue, liveValue);
+  let isRenderedOn = select(compositeValue == 1u, compositeValue == 0u, isInverted);
   if (!isRenderedOn) {
     return 1000.0;
   }
@@ -367,6 +380,26 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4<f32> {
     insideSelection && !selectedPixelWasOn
   );
   color = mix(color, selectionColor, selectionCoverage * selectedOffMask * 0.96);
+  let liveSelectionOrigin = uniforms.liveSelection.xy;
+  let liveSelectionSize = uniforms.liveSelection.zw;
+  let liveSelectionEnd = liveSelectionOrigin + liveSelectionSize;
+  let insideLiveSelection = liveSelectionSize.x > 0.0 && liveSelectionSize.y > 0.0
+    && selectionCell.x >= liveSelectionOrigin.x && selectionCell.y >= liveSelectionOrigin.y
+    && selectionCell.x < liveSelectionEnd.x && selectionCell.y < liveSelectionEnd.y;
+  let liveSelectionCell = selectionCell - liveSelectionOrigin;
+  let liveSelectionEdge = insideLiveSelection && (
+    liveSelectionCell.x < 1.0 || liveSelectionCell.y < 1.0
+    || liveSelectionCell.x >= liveSelectionSize.x - 1.0
+    || liveSelectionCell.y >= liveSelectionSize.y - 1.0
+  );
+  let liveSelectionColor = mix(uniforms.background.rgb, uniforms.pixelColor.rgb, 0.52);
+  let liveSelectionCoverage = (1.0 - smoothstep(-antialias, antialias, selectionCellDistance))
+    * select(0.0, 1.0, insideLiveSelection);
+  color = mix(
+    color,
+    liveSelectionColor,
+    liveSelectionCoverage * select(0.0, 0.34, liveSelectionEdge)
+  );
   let textCursorOrigin = uniforms.textCursor.xy;
   let textCursorSize = uniforms.textCursor.zw;
   let textCursorEnd = textCursorOrigin + textCursorSize;
@@ -459,10 +492,14 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       textAnchor,
       textCursorAnchor,
       selection,
+      selectedLiveElementId,
       appearance,
       onPixelChange,
       onStamp,
       onStampScale,
+      onLiveSelect,
+      onLiveMove,
+      onLiveDragState,
       onTextStart,
       onTextMove,
       onGeometryPreview,
@@ -486,11 +523,16 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     const textAnchorRef = useRef(textAnchor);
     const textCursorAnchorRef = useRef(textCursorAnchor);
     const selectionRef = useRef(selection);
+    const selectedLiveElementIdRef = useRef(selectedLiveElementId);
+    const liveFramesRef = useRef<LiveSpriteFrame[]>([]);
     const bitmapOffsetRef = useRef(bitmapOffsetCells);
     const appearanceRef = useRef(appearance);
     const onPixelChangeRef = useRef(onPixelChange);
     const onStampRef = useRef(onStamp);
     const onStampScaleRef = useRef(onStampScale);
+    const onLiveSelectRef = useRef(onLiveSelect);
+    const onLiveMoveRef = useRef(onLiveMove);
+    const onLiveDragStateRef = useRef(onLiveDragState);
     const onTextStartRef = useRef(onTextStart);
     const onTextMoveRef = useRef(onTextMove);
     const onGeometryPreviewRef = useRef(onGeometryPreview);
@@ -520,7 +562,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     });
     const dragRef = useRef<null | {
       pointerId: number;
-      kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'text' | 'text-move' | 'stamp' | 'select' | 'geometry' | 'polygon' | 'fill';
+      kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'text' | 'text-move' | 'stamp' | 'select' | 'geometry' | 'polygon' | 'fill' | 'live';
       x: number;
       y: number;
       paintValue?: 0 | 1;
@@ -530,6 +572,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       textDragAnchor?: { row: number; column: number };
       geometryAnchor?: { row: number; column: number };
       geometryConstrain?: boolean;
+      liveElementId?: string;
+      liveDragOffset?: { row: number; column: number };
     }>(null);
     const touchPointersRef = useRef(new Map<number, { x: number; y: number }>());
     const stampScaleWheelDeltaRef = useRef(0);
@@ -582,6 +626,10 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
 
     useImperativeHandle(forwardedRef, () => ({
       resetView: fitView,
+      setLiveFrames: (frames) => {
+        liveFramesRef.current = frames;
+        runtimeRef.current?.replaceLiveFrames(frames);
+      },
       exportPng: async () => {
         scheduleDraw();
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -655,26 +703,75 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           const pipelineError = await device.popErrorScope();
           if (pipelineError) throw new Error(pipelineError.message);
           const uniformBuffer = device.createBuffer({
-            size: 160,
+            size: 176,
             usage: 0x40 | 0x08,
           });
 
           let bitmapTexture: LocalGpuTexture | null = null;
           let stampTexture: LocalGpuTexture | null = null;
+          let liveTexture: LocalGpuTexture | null = null;
           let bindGroup: LocalGpuBindGroup | null = null;
           let bitmapWidth = 1;
           let bitmapHeight = 1;
+          let liveCounts = new Uint16Array(1);
+          let currentLiveFrames = new Map<string, LiveSpriteFrame>();
 
           const rebuildBindGroup = () => {
-            if (!bitmapTexture || !stampTexture) return;
+            if (!bitmapTexture || !stampTexture || !liveTexture) return;
             bindGroup = device.createBindGroup({
               layout: pipeline.getBindGroupLayout(0),
               entries: [
                 { binding: 0, resource: { buffer: uniformBuffer } },
                 { binding: 1, resource: bitmapTexture.createView() },
                 { binding: 2, resource: stampTexture.createView() },
+                { binding: 3, resource: liveTexture.createView() },
               ],
             });
+          };
+
+          const frameKey = (frame: LiveSpriteFrame) =>
+            `${frame.row}:${frame.column}:${frame.rows.join('/')}`;
+
+          const applyLiveFrame = (
+            frame: LiveSpriteFrame,
+            direction: 1 | -1,
+            dirty: { minRow: number; minColumn: number; maxRow: number; maxColumn: number },
+          ) => {
+            frame.rows.forEach((row, localRow) => {
+              for (let localColumn = 0; localColumn < row.length; localColumn += 1) {
+                if (row[localColumn] !== '1') continue;
+                const targetRow = frame.row + localRow;
+                const targetColumn = frame.column + localColumn;
+                if (targetRow < 0 || targetColumn < 0 || targetRow >= bitmapHeight || targetColumn >= bitmapWidth) continue;
+                const index = targetRow * bitmapWidth + targetColumn;
+                liveCounts[index] = Math.max(0, liveCounts[index] + direction);
+                dirty.minRow = Math.min(dirty.minRow, targetRow);
+                dirty.minColumn = Math.min(dirty.minColumn, targetColumn);
+                dirty.maxRow = Math.max(dirty.maxRow, targetRow);
+                dirty.maxColumn = Math.max(dirty.maxColumn, targetColumn);
+              }
+            });
+          };
+
+          const uploadLiveRect = (dirty: { minRow: number; minColumn: number; maxRow: number; maxColumn: number }) => {
+            if (!liveTexture || dirty.maxRow < dirty.minRow || dirty.maxColumn < dirty.minColumn) return;
+            const width = dirty.maxColumn - dirty.minColumn + 1;
+            const height = dirty.maxRow - dirty.minRow + 1;
+            const bytesPerRow = Math.ceil(width / 256) * 256;
+            const data = new Uint8Array(bytesPerRow * height);
+            for (let row = 0; row < height; row += 1) {
+              for (let column = 0; column < width; column += 1) {
+                data[row * bytesPerRow + column] = liveCounts[
+                  (dirty.minRow + row) * bitmapWidth + dirty.minColumn + column
+                ] > 0 ? 1 : 0;
+              }
+            }
+            device.queue.writeTexture(
+              { texture: liveTexture, origin: [dirty.minColumn, dirty.minRow, 0] },
+              data,
+              { bytesPerRow, rowsPerImage: height },
+              { width, height, depthOrArrayLayers: 1 },
+            );
           };
 
           const runtime: GpuRuntime = {
@@ -683,6 +780,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
             pipeline,
             uniformBuffer,
             bitmapTexture,
+            liveTexture,
             bindGroup,
             bitmapWidth,
             bitmapHeight,
@@ -720,11 +818,28 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
                 { bytesPerRow, rowsPerImage: bitmapHeight },
                 { width: bitmapWidth, height: bitmapHeight, depthOrArrayLayers: 1 },
               );
+              liveTexture?.destroy();
+              liveTexture = device.createTexture({
+                size: [bitmapWidth, bitmapHeight, 1],
+                format: 'r8uint',
+                usage: 0x04 | 0x02,
+              });
+              liveCounts = new Uint16Array(bitmapWidth * bitmapHeight);
+              currentLiveFrames = new Map();
+              const liveBytesPerRow = Math.ceil(bitmapWidth / 256) * 256;
+              device.queue.writeTexture(
+                { texture: liveTexture },
+                new Uint8Array(liveBytesPerRow * bitmapHeight),
+                { bytesPerRow: liveBytesPerRow, rowsPerImage: bitmapHeight },
+                { width: bitmapWidth, height: bitmapHeight, depthOrArrayLayers: 1 },
+              );
               rebuildBindGroup();
               runtime.bitmapTexture = bitmapTexture;
+              runtime.liveTexture = liveTexture;
               runtime.bindGroup = bindGroup;
               runtime.bitmapWidth = bitmapWidth;
               runtime.bitmapHeight = bitmapHeight;
+              runtime.replaceLiveFrames(liveFramesRef.current);
               scheduleDraw();
             },
             replaceStamp: (nextStamp) => {
@@ -752,6 +867,27 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
               );
               rebuildBindGroup();
               runtime.bindGroup = bindGroup;
+              scheduleDraw();
+            },
+            replaceLiveFrames: (nextFrames) => {
+              if (!liveTexture) return;
+              const nextById = new Map(nextFrames.map((frame) => [frame.id, frame]));
+              const dirty = {
+                minRow: Number.POSITIVE_INFINITY,
+                minColumn: Number.POSITIVE_INFINITY,
+                maxRow: -1,
+                maxColumn: -1,
+              };
+              currentLiveFrames.forEach((previous, id) => {
+                const next = nextById.get(id);
+                if (!next || frameKey(next) !== frameKey(previous)) applyLiveFrame(previous, -1, dirty);
+              });
+              nextById.forEach((next, id) => {
+                const previous = currentLiveFrames.get(id);
+                if (!previous || frameKey(next) !== frameKey(previous)) applyLiveFrame(next, 1, dirty);
+              });
+              currentLiveFrames = nextById;
+              uploadLiveRect(dirty);
               scheduleDraw();
             },
             draw: () => {
@@ -790,6 +926,17 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
               const textCursorValues = textCursorCell && textCursorVisibleRef.current
                 ? [textCursorCell.column, textCursorCell.row, ...textCursorSizeRef.current]
                 : [0, 0, 0, 0];
+              const selectedLiveFrame = liveFramesRef.current.find(
+                (frame) => frame.id === selectedLiveElementIdRef.current,
+              );
+              const liveSelectionValues = selectedLiveFrame
+                ? [
+                    selectedLiveFrame.column,
+                    selectedLiveFrame.row,
+                    Math.max(0, ...selectedLiveFrame.rows.map((row) => row.length)),
+                    selectedLiveFrame.rows.length,
+                  ]
+                : [0, 0, 0, 0];
               background[3] = (appearanceRef.current.inverted ? 1 : 0)
                 + (appearanceRef.current.gridVisible ? 2 : 0);
               const values = new Float32Array([
@@ -803,6 +950,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
                 ...stampPreview,
                 ...selectionValues,
                 ...textCursorValues,
+                ...liveSelectionValues,
               ]);
               device.queue.writeBuffer(uniformBuffer, 0, values);
 
@@ -824,6 +972,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
             destroy: () => {
               bitmapTexture?.destroy();
               stampTexture?.destroy();
+              liveTexture?.destroy();
               uniformBuffer.destroy();
             },
           };
@@ -898,6 +1047,11 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
     }, [selection]);
 
     useEffect(() => {
+      selectedLiveElementIdRef.current = selectedLiveElementId;
+      scheduleDraw();
+    }, [selectedLiveElementId]);
+
+    useEffect(() => {
       appearanceRef.current = appearance;
       scheduleDraw();
     }, [appearance]);
@@ -906,6 +1060,9 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       onPixelChangeRef.current = onPixelChange;
       onStampRef.current = onStamp;
       onStampScaleRef.current = onStampScale;
+      onLiveSelectRef.current = onLiveSelect;
+      onLiveMoveRef.current = onLiveMove;
+      onLiveDragStateRef.current = onLiveDragState;
       onTextStartRef.current = onTextStart;
       onTextMoveRef.current = onTextMove;
       onGeometryPreviewRef.current = onGeometryPreview;
@@ -919,7 +1076,12 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       onPaintEndRef.current = onPaintEnd;
       modeRef.current = mode;
       editToolRef.current = editTool;
-      if (mode !== 'edit') dragRef.current = null;
+      if (mode !== 'live' && dragRef.current?.kind === 'live') {
+        if (dragRef.current.liveElementId) {
+          onLiveDragStateRef.current(dragRef.current.liveElementId, false);
+        }
+        dragRef.current = null;
+      }
       if (mode !== 'edit' || editTool !== 'stamp') {
         stampPreviewCellRef.current = null;
         scheduleDraw();
@@ -928,7 +1090,7 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         textCursorCellRef.current = null;
         scheduleDraw();
       }
-    }, [editTool, mode, onGeometryCancel, onGeometryCommit, onGeometryHover, onGeometryPoint, onGeometryPreview, onPaintEnd, onPaintStart, onPixelChange, onSelectionChange, onSelectionEnd, onStamp, onStampScale, onTextMove, onTextStart]);
+    }, [editTool, mode, onGeometryCancel, onGeometryCommit, onGeometryHover, onGeometryPoint, onGeometryPreview, onLiveDragState, onLiveMove, onLiveSelect, onPaintEnd, onPaintStart, onPixelChange, onSelectionChange, onSelectionEnd, onStamp, onStampScale, onTextMove, onTextStart]);
 
     useEffect(() => {
       if (mode !== 'edit' || editTool !== 'text') {
@@ -1072,6 +1234,9 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         if (touchPointersRef.current.size >= 2) {
           if (dragRef.current?.kind === 'paint') onPaintEndRef.current?.();
           if (dragRef.current?.kind === 'geometry') onGeometryCancelRef.current();
+          if (dragRef.current?.kind === 'live' && dragRef.current.liveElementId) {
+            onLiveDragStateRef.current(dragRef.current.liveElementId, false);
+          }
           dragRef.current = null;
           beginTouchGesture();
           return;
@@ -1083,12 +1248,14 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         && event.shiftKey;
       const shouldPan = (event.shiftKey && !shouldConstrainGeometry) || event.button === 1 || event.button === 2;
       const shouldRoll = event.altKey && !shouldPan;
-      let kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'text' | 'text-move' | 'stamp' | 'select' | 'geometry' | 'polygon' | 'fill' = shouldPan
+      let kind: 'rotate' | 'roll' | 'pan' | 'paint' | 'text' | 'text-move' | 'stamp' | 'select' | 'geometry' | 'polygon' | 'fill' | 'live' = shouldPan
         ? 'pan'
         : shouldRoll
           ? 'roll'
           : 'rotate';
       let paintValue: 0 | 1 | undefined;
+      let liveElementId: string | undefined;
+      let liveDragOffset: { row: number; column: number } | undefined;
 
       if (modeRef.current === 'edit' && !shouldPan && !shouldRoll) {
         const cell = cellAtPointer(event.clientX, event.clientY);
@@ -1109,6 +1276,26 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           kind = 'paint';
           paintValue = bitmapRef.current[cell.row]?.[cell.column] === '1' ? 0 : 1;
         }
+      } else if (modeRef.current === 'live' && !shouldPan && !shouldRoll) {
+        const cell = cellAtPointer(event.clientX, event.clientY);
+        if (!cell) return;
+        const hit = [...liveFramesRef.current].reverse().find((frame) => {
+          const width = Math.max(0, ...frame.rows.map((row) => row.length));
+          return cell.row >= frame.row && cell.row < frame.row + frame.rows.length
+            && cell.column >= frame.column && cell.column < frame.column + width;
+        });
+        if (hit) {
+          kind = 'live';
+          liveElementId = hit.id;
+          liveDragOffset = {
+            row: cell.row - hit.row,
+            column: cell.column - hit.column,
+          };
+          onLiveSelectRef.current(hit.id);
+          onLiveDragStateRef.current(hit.id, true);
+        } else {
+          onLiveSelectRef.current(null);
+        }
       }
 
       dragRef.current = {
@@ -1122,6 +1309,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
         textDragAnchor: kind === 'text-move' ? textAnchorRef.current ?? undefined : undefined,
         geometryAnchor: kind === 'geometry' ? cellAtPointer(event.clientX, event.clientY) ?? undefined : undefined,
         geometryConstrain: kind === 'geometry' ? event.shiftKey : undefined,
+        liveElementId,
+        liveDragOffset,
       };
       if (kind === 'paint') {
         onPaintStartRef.current?.();
@@ -1231,6 +1420,15 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
           drag.geometryConstrain = event.shiftKey;
           onGeometryPreviewRef.current(drag.geometryAnchor, cell, event.shiftKey);
         }
+      } else if (drag.kind === 'live' && drag.liveElementId && drag.liveDragOffset) {
+        const cell = cellAtPointer(event.clientX, event.clientY);
+        if (cell) {
+          onLiveMoveRef.current(
+            drag.liveElementId,
+            cell.row - drag.liveDragOffset.row,
+            cell.column - drag.liveDragOffset.column,
+          );
+        }
       }
     };
 
@@ -1280,6 +1478,8 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       } else if ((dragRef.current.kind === 'polygon' || dragRef.current.kind === 'fill') && event.type === 'pointerup') {
         const cell = cellAtPointer(event.clientX, event.clientY);
         if (cell) onGeometryPointRef.current(cell.row, cell.column);
+      } else if (dragRef.current.kind === 'live' && dragRef.current.liveElementId) {
+        onLiveDragStateRef.current(dragRef.current.liveElementId, false);
       }
       dragRef.current = null;
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {

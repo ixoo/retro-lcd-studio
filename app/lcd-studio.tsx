@@ -3,21 +3,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BoxSelect,
+  CalendarDays,
   Circle,
+  Clock3,
   Download,
   FolderOpen,
   ImagePlus,
   Minus,
   MousePointer2,
   PaintBucket,
+  Pause,
   Pencil,
   Pentagon,
+  Play,
+  Plus,
   Redo2,
   Rotate3D,
   RotateCcw,
   Settings2,
   Square,
   Stamp,
+  Trash2,
   Type,
   Undo2,
 } from 'lucide-react';
@@ -30,6 +36,28 @@ import {
   type LcdMode,
   type LcdSelection,
 } from '@/app/lcd-canvas';
+import {
+  ballBitmap,
+  CALENDAR_FORMATS,
+  clampFramePosition,
+  CLOCK_FORMATS,
+  createMotionState,
+  CURSOR_PATTERNS,
+  CURSOR_SHAPES,
+  findNearestFreePosition,
+  formatLiveCalendar,
+  formatLiveClock,
+  frameCollides,
+  frameContains,
+  stepBall,
+  stepMouse,
+  type CalendarFormat,
+  type ClockFormat,
+  type CursorPatternId,
+  type LiveElement,
+  type LiveMotionState,
+  type LiveSpriteFrame,
+} from '@/app/live-elements';
 import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Slider } from '@/components/ui/slider';
@@ -1206,6 +1234,46 @@ function loadPixelFont(fontId: PixelFontId, pixelSize = 16) {
   return document.fonts.load(`${font.weight} ${pixelSize}px ${font.css}`, 'Aa').then(() => undefined);
 }
 
+function liveTextRows(
+  element: Extract<LiveElement, { type: 'clock' | 'calendar' }>,
+  date: Date,
+  cache: Map<string, string[]>,
+) {
+  const text = element.type === 'clock'
+    ? formatLiveClock(date, element.format)
+    : formatLiveCalendar(date, element.format);
+  const key = `${element.type}:${element.fontId}:${element.size}:${text}`;
+  const cached = cache.get(key);
+  if (cached) return cached;
+  const rows = rasterizePixelText(text, element.fontId as PixelFontId, element.size);
+  cache.set(key, rows);
+  if (cache.size > 80) cache.delete(cache.keys().next().value ?? key);
+  return rows;
+}
+
+function autoFitLiveText(
+  text: string,
+  fontId: PixelFontId,
+  width: number,
+  height: number,
+) {
+  let low = MIN_TEXT_PIXEL_SIZE;
+  let high = Math.min(MAX_TEXT_PIXEL_SIZE, Math.max(MIN_TEXT_PIXEL_SIZE, height * 2));
+  let best = MIN_TEXT_PIXEL_SIZE;
+  while (low <= high) {
+    const size = Math.floor((low + high) / 2);
+    const rows = rasterizePixelText(text, fontId, size);
+    const fits = rows.length <= height && (rows[0]?.length ?? 0) <= width;
+    if (fits) {
+      best = size;
+      low = size + 1;
+    } else {
+      high = size - 1;
+    }
+  }
+  return best;
+}
+
 function lineCells(start: Cell, end: Cell) {
   const cells: Cell[] = [];
   let x = start.column;
@@ -1426,8 +1494,21 @@ export function LcdStudio() {
   const paintBaseRef = useRef<BitmapFrame | null>(null);
   const textSessionRef = useRef<TextSession | null>(null);
   const stampScaleRef = useRef(100);
+  const liveElementsRef = useRef<LiveElement[]>([]);
+  const liveMotionRef = useRef(new Map<string, LiveMotionState>());
+  const liveFramesRef = useRef<LiveSpriteFrame[]>([]);
+  const liveDraggingRef = useRef(new Set<string>());
+  const liveTextCacheRef = useRef(new Map<string, string[]>());
+  const livePausedRef = useRef(false);
+  const liveDisplayTimeRef = useRef(0);
+  const nextLiveIdRef = useRef(1);
 
   const [mode, setMode] = useState<LcdMode>('view');
+  const [liveElements, setLiveElements] = useState<LiveElement[]>([]);
+  const [selectedLiveElementId, setSelectedLiveElementId] = useState<string | null>(null);
+  const [livePaused, setLivePaused] = useState(false);
+  const [liveAddOpen, setLiveAddOpen] = useState(false);
+  const [liveOverflowIds, setLiveOverflowIds] = useState<Set<string>>(() => new Set());
   const [editTool, setEditTool] = useState<LcdEditTool>('pen');
   const [selectedSpriteId, setSelectedSpriteId] = useState(CLIPBOARD_SPRITE_ID);
   const [stampScalePercent, setStampScalePercent] = useState(100);
@@ -1475,6 +1556,113 @@ export function LcdStudio() {
     return () => cancelAnimationFrame(frame);
   }, [selectedFontId, textPixelSize]);
 
+  useEffect(() => {
+    liveElementsRef.current = liveElements;
+  }, [liveElements]);
+
+  useEffect(() => {
+    livePausedRef.current = livePaused;
+    if (!livePaused) liveDisplayTimeRef.current = Date.now();
+  }, [livePaused]);
+
+  useEffect(() => {
+    let animationFrame = 0;
+    let previousTime = performance.now();
+    const tick = (time: number) => {
+      const bounds = {
+        width: bitmapRef.current[0]?.length ?? 1,
+        height: bitmapRef.current.length || 1,
+      };
+      const deltaSeconds = livePausedRef.current
+        ? 0
+        : Math.min(0.05, Math.max(0, (time - previousTime) / 1000));
+      previousTime = time;
+      if (!livePausedRef.current) liveDisplayTimeRef.current = Date.now();
+      const displayDate = new Date(liveDisplayTimeRef.current);
+      const elements = liveElementsRef.current.filter((element) => element.enabled);
+      const nextFrames: LiveSpriteFrame[] = [];
+
+      for (const element of elements) {
+        if (element.type === 'ball') continue;
+        let rows: string[];
+        let row = element.row;
+        let column = element.column;
+        if (element.type === 'clock' || element.type === 'calendar') {
+          rows = liveTextRows(element, displayDate, liveTextCacheRef.current);
+          const frameWidth = rows[0]?.length ?? 1;
+          row = rows.length > bounds.height ? Math.round((bounds.height - rows.length) / 2) : row;
+          column = frameWidth > bounds.width ? Math.round((bounds.width - frameWidth) / 2) : column;
+          if (rows.length <= bounds.height && frameWidth <= bounds.width) {
+            ({ row, column } = clampFramePosition(rows, row, column, bounds));
+          }
+        } else {
+          rows = CURSOR_SHAPES.find((shape) => shape.id === element.shape)?.rows ?? CURSOR_SHAPES[0].rows;
+          let motion = liveMotionRef.current.get(element.id)
+            ?? createMotionState(element.row, element.column, nextLiveIdRef.current);
+          if (liveDraggingRef.current.has(element.id)) {
+            motion = { ...motion, row: element.row, column: element.column };
+          } else if (!livePausedRef.current) {
+            motion = stepMouse(element, motion, rows, deltaSeconds, bounds);
+          }
+          liveMotionRef.current.set(element.id, motion);
+          row = Math.round(motion.row);
+          column = Math.round(motion.column);
+        }
+        nextFrames.push({ id: element.id, rows, row, column });
+      }
+
+      const ballFrames = elements.filter((element) => element.type === 'ball').map((element) => {
+        const rows = ballBitmap(element.size);
+        const motion = liveMotionRef.current.get(element.id)
+          ?? createMotionState(element.row, element.column, nextLiveIdRef.current);
+        return { id: element.id, rows, row: Math.round(motion.row), column: Math.round(motion.column) };
+      });
+
+      for (const element of elements) {
+        if (element.type !== 'ball') continue;
+        const rows = ballBitmap(element.size);
+        let motion = liveMotionRef.current.get(element.id)
+          ?? createMotionState(element.row, element.column, nextLiveIdRef.current);
+        if (liveDraggingRef.current.has(element.id)) {
+          motion = { ...motion, row: element.row, column: element.column };
+        } else if (!livePausedRef.current) {
+          const obstacles = [...nextFrames, ...ballFrames.filter((frame) => frame.id !== element.id)];
+          const isBlocked = (row: number, column: number) => (
+            bitmapRef.current[row]?.[column] === '1'
+            || obstacles.some((frame) => frameContains(frame, row, column))
+          );
+          if (frameCollides(rows, motion.row, motion.column, bounds, isBlocked)) {
+            const free = findNearestFreePosition(
+              rows,
+              motion.row,
+              motion.column,
+              bounds,
+              isBlocked,
+            );
+            if (free) motion = { ...motion, ...free };
+          }
+          motion = stepBall(element, motion, rows, deltaSeconds, bounds, isBlocked);
+        }
+        liveMotionRef.current.set(element.id, motion);
+        const frame = {
+          id: element.id,
+          rows,
+          row: Math.round(motion.row),
+          column: Math.round(motion.column),
+        };
+        const index = ballFrames.findIndex((item) => item.id === element.id);
+        if (index >= 0) ballFrames[index] = frame;
+      }
+
+      const frames = [...nextFrames, ...ballFrames];
+      liveFramesRef.current = frames;
+      canvasRef.current?.setLiveFrames(frames);
+      animationFrame = requestAnimationFrame(tick);
+    };
+    animationFrame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animationFrame);
+  }, []);
+
   const stopTextSession = useCallback(() => {
     textSessionRef.current = null;
     setTextAnchor(null);
@@ -1492,6 +1680,136 @@ export function LcdStudio() {
     }
     setMode(nextMode);
   }, [stopTextSession]);
+
+  const clearLiveElements = useCallback(() => {
+    liveElementsRef.current = [];
+    liveMotionRef.current.clear();
+    liveFramesRef.current = [];
+    liveDraggingRef.current.clear();
+    setLiveElements([]);
+    setSelectedLiveElementId(null);
+    canvasRef.current?.setLiveFrames([]);
+  }, []);
+
+  const updateLiveElement = useCallback((id: string, patch: Partial<LiveElement>) => {
+    setLiveElements((elements) => {
+      const next = elements.map((element) => (
+        element.id === id ? { ...element, ...patch } as LiveElement : element
+      ));
+      liveElementsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const moveLiveElement = useCallback((id: string, row: number, column: number) => {
+    if (!Number.isFinite(row) || !Number.isFinite(column)) return;
+    const frame = liveFramesRef.current.find((item) => item.id === id);
+    const bounds = {
+      width: bitmapRef.current[0]?.length ?? 1,
+      height: bitmapRef.current.length || 1,
+    };
+    const position = frame
+      ? clampFramePosition(frame.rows, row, column, bounds)
+      : { row: Math.round(row), column: Math.round(column) };
+    updateLiveElement(id, position);
+    const motion = liveMotionRef.current.get(id);
+    if (motion) liveMotionRef.current.set(id, { ...motion, ...position });
+  }, [updateLiveElement]);
+
+  const setLiveDragState = useCallback((id: string, dragging: boolean) => {
+    if (dragging) liveDraggingRef.current.add(id);
+    else liveDraggingRef.current.delete(id);
+  }, []);
+
+  const addLiveElement = useCallback((type: LiveElement['type']) => {
+    const id = `${type}-${nextLiveIdRef.current++}`;
+    const width = bitmapRef.current[0]?.length ?? 1;
+    const height = bitmapRef.current.length || 1;
+    const date = new Date();
+    let element: LiveElement;
+    let rows: string[];
+
+    if (type === 'clock') {
+      const format: ClockFormat = '24-short';
+      const text = formatLiveClock(date, format);
+      const size = autoFitLiveText(text, 'tiny', width, height);
+      rows = rasterizePixelText(text, 'tiny', size);
+      element = { id, type, enabled: true, format, fontId: 'tiny', size, row: 0, column: 0 };
+      void loadPixelFont('tiny', size).then(() => liveTextCacheRef.current.clear());
+    } else if (type === 'calendar') {
+      const format: CalendarFormat = 'iso';
+      const text = formatLiveCalendar(date, format);
+      const size = autoFitLiveText(text, 'tiny', width, height);
+      rows = rasterizePixelText(text, 'tiny', size);
+      element = { id, type, enabled: true, format, fontId: 'tiny', size, row: 0, column: 0 };
+      void loadPixelFont('tiny', size).then(() => liveTextCacheRef.current.clear());
+    } else if (type === 'mouse') {
+      rows = CURSOR_SHAPES[0].rows;
+      element = { id, type, enabled: true, shape: 'arrow', pattern: 'bounce', speed: 4, row: 0, column: 0 };
+    } else {
+      rows = ballBitmap(3);
+      element = { id, type, enabled: true, size: 3, speed: 4, row: 0, column: 0 };
+    }
+
+    const preferred = {
+      row: Math.max(0, Math.round((height - rows.length) / 2)),
+      column: Math.max(0, Math.round((width - (rows[0]?.length ?? 1)) / 2)),
+    };
+    const existingFrames = liveFramesRef.current;
+    const position = type === 'ball'
+      ? findNearestFreePosition(
+          rows,
+          preferred.row,
+          preferred.column,
+          { width, height },
+          (row, column) => bitmapRef.current[row]?.[column] === '1'
+            || existingFrames.some((frame) => frameContains(frame, row, column)),
+        ) ?? preferred
+      : preferred;
+    element = { ...element, ...position } as LiveElement;
+    const next = [...liveElementsRef.current, element];
+    liveElementsRef.current = next;
+    liveMotionRef.current.set(id, createMotionState(position.row, position.column, nextLiveIdRef.current));
+    setLiveElements(next);
+    setSelectedLiveElementId(id);
+    setLiveAddOpen(false);
+    setMode('live');
+    setActionStatus(`${type[0].toUpperCase()}${type.slice(1)} added`);
+  }, []);
+
+  const removeLiveElement = useCallback((id: string) => {
+    const next = liveElementsRef.current.filter((element) => element.id !== id);
+    liveElementsRef.current = next;
+    liveMotionRef.current.delete(id);
+    liveDraggingRef.current.delete(id);
+    setLiveElements(next);
+    setSelectedLiveElementId((selected) => selected === id ? next.at(-1)?.id ?? null : selected);
+    setActionStatus('Live element removed');
+  }, []);
+
+  const selectedLiveElement = useMemo(
+    () => liveElements.find((element) => element.id === selectedLiveElementId) ?? null,
+    [liveElements, selectedLiveElementId],
+  );
+  const selectedLiveTextOverflow = selectedLiveElement
+    && (selectedLiveElement.type === 'clock' || selectedLiveElement.type === 'calendar')
+    && liveOverflowIds.has(selectedLiveElement.id);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const date = new Date();
+      const overflowIds = new Set<string>();
+      liveElements.forEach((element) => {
+        if (element.type !== 'clock' && element.type !== 'calendar') return;
+        const rows = liveTextRows(element, date, liveTextCacheRef.current);
+        if (rows.length > bitmap.length || (rows[0]?.length ?? 0) > (bitmap[0]?.length ?? 1)) {
+          overflowIds.add(element.id);
+        }
+      });
+      setLiveOverflowIds(overflowIds);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [bitmap, liveElements]);
 
   const chooseEditTool = (nextTool: LcdEditTool) => {
     if (nextTool !== 'text') stopTextSession();
@@ -1900,7 +2218,7 @@ export function LcdStudio() {
         && (event.key === 'Shift' || event.key === 'Enter' || event.key === 'Escape')) {
         setGestureHintRevision((revision) => revision + 1);
       }
-      if (event.key === 'Escape' && mode === 'edit') {
+      if (event.key === 'Escape' && mode !== 'view') {
         event.preventDefault();
         setSelection(null);
         chooseMode('view');
@@ -1920,6 +2238,7 @@ export function LcdStudio() {
       if (isTyping || event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key.toLowerCase() === 'v') chooseMode('view');
       if (event.key.toLowerCase() === 'e') chooseMode('edit');
+      if (event.key.toLowerCase() === 'l') chooseMode('live');
       if (event.key.toLowerCase() === 'r') canvasRef.current?.resetView();
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -1929,6 +2248,7 @@ export function LcdStudio() {
   const loadBitmapAction = useCallback(async (source: string) => {
     const parsed = parseBitmap(source);
     if (!parsed.rows) throw new Error(parsed.error);
+    clearLiveElements();
     replaceBitmap(parsed.rows, true, centeredBitmapOffset(parsed.rows));
     canvasRef.current?.resetView();
     setActionStatus('Bitmap loaded by browser tool');
@@ -1938,7 +2258,7 @@ export function LcdStudio() {
       height: parsed.rows.length,
       bitmap: parsed.rows.join('\n'),
     };
-  }, [replaceBitmap]);
+  }, [clearLiveElements, replaceBitmap]);
 
   const resetViewAction = useCallback(async () => {
     canvasRef.current?.resetView();
@@ -2018,6 +2338,7 @@ export function LcdStudio() {
     setActionStatus(`Converting ${file.name}…`);
     try {
       const rows = await imageFileToBitmap(file);
+      clearLiveElements();
       replaceBitmap(rows, true, centeredBitmapOffset(rows));
       canvasRef.current?.resetView();
       setActionStatus(`${file.name} imported · ${rows[0].length} × ${rows.length} · 1:1`);
@@ -2086,6 +2407,16 @@ export function LcdStudio() {
                 >
                   <Pencil data-icon="inline-start" />
                   <span className="button-label">Edit</span>
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={mode === 'live' ? 'default' : 'ghost'}
+                  aria-pressed={mode === 'live'}
+                  onClick={() => chooseMode('live')}
+                >
+                  <Play data-icon="inline-start" />
+                  <span className="button-label">Live</span>
                 </Button>
               </fieldset>
 
@@ -2326,6 +2657,163 @@ export function LcdStudio() {
             )}
           </section>
 
+          {mode === 'live' && (
+            <section className="control-group live-workspace" aria-labelledby="live-heading">
+              <div className="live-heading-row">
+                <h2 id="live-heading">Live elements</h2>
+                <div className="live-master-actions">
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant={livePaused ? 'outline' : 'ghost'}
+                    aria-label={livePaused ? 'Resume all live elements' : 'Pause all live elements'}
+                    title={livePaused ? 'Resume all' : 'Pause all'}
+                    onClick={() => setLivePaused((paused) => !paused)}
+                  >
+                    {livePaused ? <Play /> : <Pause />}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="default"
+                    aria-expanded={liveAddOpen}
+                    onClick={() => setLiveAddOpen((open) => !open)}
+                  >
+                    <Plus /> Add
+                  </Button>
+                </div>
+              </div>
+
+              {liveAddOpen && (
+                <div className="live-add-menu" aria-label="Add live element">
+                  <button type="button" onClick={() => addLiveElement('clock')}><Clock3 /><span>Clock</span></button>
+                  <button type="button" onClick={() => addLiveElement('calendar')}><CalendarDays /><span>Calendar</span></button>
+                  <button type="button" onClick={() => addLiveElement('mouse')}><MousePointer2 /><span>Mouse</span></button>
+                  <button type="button" onClick={() => addLiveElement('ball')}><Circle /><span>Ball</span></button>
+                </div>
+              )}
+
+              {liveElements.length === 0 ? (
+                <div className="live-empty">
+                  <span className="live-empty-pixels" aria-hidden="true">● ● ●</span>
+                  <p>Add a clock, cursor, or moving object.</p>
+                </div>
+              ) : (
+                <div className="live-element-list" aria-label="Live elements">
+                  {liveElements.map((element) => {
+                    const number = liveElements.filter((item) => item.type === element.type)
+                      .findIndex((item) => item.id === element.id) + 1;
+                    const label = `${element.type[0].toUpperCase()}${element.type.slice(1)} ${number}`;
+                    const Icon = element.type === 'clock' ? Clock3
+                      : element.type === 'calendar' ? CalendarDays
+                      : element.type === 'mouse' ? MousePointer2
+                      : Circle;
+                    return (
+                      <div className="live-element-row" data-selected={selectedLiveElementId === element.id} key={element.id}>
+                        <button type="button" className="live-element-select" onClick={() => setSelectedLiveElementId(element.id)}>
+                          <Icon /> <span>{label}</span>
+                        </button>
+                        <Switch
+                          checked={element.enabled}
+                          aria-label={`${element.enabled ? 'Disable' : 'Enable'} ${label}`}
+                          onCheckedChange={(enabled) => updateLiveElement(element.id, { enabled })}
+                        />
+                        <Button type="button" size="icon-sm" variant="ghost" aria-label={`Delete ${label}`} onClick={() => removeLiveElement(element.id)}>
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {selectedLiveElement && (
+                <div className="live-settings" aria-label={`${selectedLiveElement.type} settings`}>
+                  {(selectedLiveElement.type === 'clock' || selectedLiveElement.type === 'calendar') && (
+                    <>
+                      <label className="live-field">
+                        <span>Format</span>
+                        <select
+                          value={selectedLiveElement.format}
+                          onChange={(event) => updateLiveElement(selectedLiveElement.id, {
+                            format: event.target.value as ClockFormat | CalendarFormat,
+                          } as Partial<LiveElement>)}
+                        >
+                          {(selectedLiveElement.type === 'clock' ? CLOCK_FORMATS : CALENDAR_FORMATS).map((format) => (
+                            <option value={format.id} key={format.id}>{format.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="live-field">
+                        <span>Font</span>
+                        <select
+                          value={selectedLiveElement.fontId}
+                          onChange={(event) => {
+                            const fontId = event.target.value as PixelFontId;
+                            void loadPixelFont(fontId, selectedLiveElement.size)
+                              .then(() => liveTextCacheRef.current.clear());
+                            updateLiveElement(selectedLiveElement.id, { fontId } as Partial<LiveElement>);
+                          }}
+                        >
+                          {PIXEL_FONTS.map((font) => <option value={font.id} key={font.id}>{font.label}</option>)}
+                        </select>
+                      </label>
+                      <ControlSlider
+                        id="live-text-size"
+                        label="Size"
+                        value={selectedLiveElement.size}
+                        formattedValue={`${selectedLiveElement.size}px`}
+                        min={MIN_TEXT_PIXEL_SIZE}
+                        max={MAX_TEXT_PIXEL_SIZE}
+                        step={1}
+                        onChange={(size) => updateLiveElement(selectedLiveElement.id, { size } as Partial<LiveElement>)}
+                      />
+                      {selectedLiveTextOverflow && <p className="live-warning">This text is larger than the bitmap and will be centered and clipped.</p>}
+                    </>
+                  )}
+
+                  {selectedLiveElement.type === 'mouse' && (
+                    <>
+                      <fieldset className="live-cursor-picker" aria-label="Cursor shape">
+                        {CURSOR_SHAPES.map((shape) => (
+                          <button
+                            type="button"
+                            key={shape.id}
+                            aria-label={shape.label}
+                            title={shape.label}
+                            aria-pressed={selectedLiveElement.shape === shape.id}
+                            onClick={() => updateLiveElement(selectedLiveElement.id, { shape: shape.id } as Partial<LiveElement>)}
+                          >
+                            <BitmapThumbnail rows={shape.rows} background={appearance.background} pixel={appearance.pixel} inverted={false} />
+                          </button>
+                        ))}
+                      </fieldset>
+                      <label className="live-field">
+                        <span>Motion</span>
+                        <select value={selectedLiveElement.pattern} onChange={(event) => updateLiveElement(selectedLiveElement.id, { pattern: event.target.value as CursorPatternId } as Partial<LiveElement>)}>
+                          {CURSOR_PATTERNS.map((pattern) => <option value={pattern.id} key={pattern.id}>{pattern.label}</option>)}
+                        </select>
+                      </label>
+                      <ControlSlider id="live-mouse-speed" label="Speed" value={selectedLiveElement.speed} formattedValue={`${selectedLiveElement.speed.toFixed(1)} cells/s`} min={0.5} max={30} step={0.5} onChange={(speed) => updateLiveElement(selectedLiveElement.id, { speed } as Partial<LiveElement>)} />
+                    </>
+                  )}
+
+                  {selectedLiveElement.type === 'ball' && (
+                    <>
+                      <ControlSlider id="live-ball-size" label="Diameter" value={selectedLiveElement.size} formattedValue={`${selectedLiveElement.size} cells`} min={1} max={15} step={2} onChange={(size) => updateLiveElement(selectedLiveElement.id, { size } as Partial<LiveElement>)} />
+                      <ControlSlider id="live-ball-speed" label="Speed" value={selectedLiveElement.speed} formattedValue={`${selectedLiveElement.speed.toFixed(1)} cells/s`} min={0.5} max={30} step={0.5} onChange={(speed) => updateLiveElement(selectedLiveElement.id, { speed } as Partial<LiveElement>)} />
+                    </>
+                  )}
+
+                  <div className="live-position">
+                    <label><span>Column</span><input type="number" value={selectedLiveElement.column} onChange={(event) => moveLiveElement(selectedLiveElement.id, selectedLiveElement.row, event.target.valueAsNumber)} /></label>
+                    <label><span>Row</span><input type="number" value={selectedLiveElement.row} onChange={(event) => moveLiveElement(selectedLiveElement.id, event.target.valueAsNumber, selectedLiveElement.column)} /></label>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
           {mode === 'view' && (
             <>
               <section className="control-group" aria-labelledby="style-heading">
@@ -2439,9 +2927,13 @@ export function LcdStudio() {
               ? geometryPreview.rows
               : stampBitmap}
           selection={mode === 'edit' && editTool === 'select' ? selection : null}
+          selectedLiveElementId={mode === 'live' ? selectedLiveElementId : null}
           onPixelChange={setPixel}
           onStamp={stampAt}
           onStampScale={nudgeStampScale}
+          onLiveSelect={setSelectedLiveElementId}
+          onLiveMove={moveLiveElement}
+          onLiveDragState={setLiveDragState}
           onTextStart={beginTextAt}
           onTextMove={moveTextTo}
           onGeometryPreview={previewGeometry}
@@ -2462,6 +2954,11 @@ export function LcdStudio() {
             <>
               <span className="mouse-gesture-hint"><strong>Drag</strong> tilt · <strong>Shift</strong> pan · <strong>Option</strong> rotate · <strong>Scroll</strong> zoom</span>
               <span className="touch-gesture-hint"><strong>1 finger</strong> tilts · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
+            </>
+          ) : mode === 'live' ? (
+            <>
+              <span className="mouse-gesture-hint"><strong>Drag an element</strong> move · <strong>Drag empty space</strong> tilt · <strong>Shift</strong> pan · <strong>Esc</strong> view</span>
+              <span className="touch-gesture-hint"><strong>Drag an element</strong> move · <strong>2 fingers</strong> navigate · <strong>Esc</strong> view</span>
             </>
           ) : editTool === 'pen' ? (
             <>
