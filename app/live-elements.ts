@@ -1,6 +1,15 @@
 export type ClockFormat = '24-short' | '24-seconds' | '12-short' | '12-seconds';
 export type CalendarFormat = 'iso' | 'day-first' | 'month-first' | 'month-name' | 'weekday';
-export type CursorShapeId = 'arrow' | 'hand' | 'crosshair' | 'hourglass';
+export type CursorShapeId =
+  | 'arrow'
+  | 'hand'
+  | 'crosshair'
+  | 'hourglass'
+  | 'ibeam'
+  | 'move'
+  | 'resize-horizontal'
+  | 'resize-diagonal'
+  | 'forbidden';
 export type CursorPatternId = 'bounce' | 'horizontal' | 'vertical' | 'perimeter' | 'wander';
 
 type LiveElementBase = {
@@ -28,6 +37,7 @@ export type LiveMouseElement = LiveElementBase & {
   type: 'mouse';
   shape: CursorShapeId;
   pattern: CursorPatternId;
+  scale: number;
   speed: number;
 };
 
@@ -78,6 +88,31 @@ export const CURSOR_SHAPES: Array<{ id: CursorShapeId; label: string; rows: stri
     id: 'hourglass',
     label: 'Hourglass',
     rows: ['1111111', '0111110', '0011100', '0001000', '0011100', '0110110', '1111111'],
+  },
+  {
+    id: 'ibeam',
+    label: 'Text',
+    rows: ['1111111', '0001000', '0001000', '0001000', '0001000', '0001000', '0001000', '0001000', '1111111'],
+  },
+  {
+    id: 'move',
+    label: 'Move',
+    rows: ['000010000', '000111000', '001111100', '000111000', '111111111', '000111000', '001111100', '000111000', '000010000'],
+  },
+  {
+    id: 'resize-horizontal',
+    label: 'Horizontal resize',
+    rows: ['000010000', '000111000', '111111111', '000111000', '000010000'],
+  },
+  {
+    id: 'resize-diagonal',
+    label: 'Diagonal resize',
+    rows: ['111000000', '111100000', '111110000', '011111000', '001111100', '000111110', '000011111', '000001111', '000000111'],
+  },
+  {
+    id: 'forbidden',
+    label: 'Forbidden',
+    rows: ['001111100', '011111110', '110000111', '110001111', '110011011', '111110011', '111100011', '011111110', '001111100'],
   },
 ];
 

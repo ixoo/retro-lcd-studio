@@ -1653,7 +1653,10 @@ export function LcdStudio() {
             ({ row, column } = clampFramePosition(rows, row, column, bounds));
           }
         } else {
-          rows = CURSOR_SHAPES.find((shape) => shape.id === element.shape)?.rows ?? CURSOR_SHAPES[0].rows;
+          rows = scaleBitmap(
+            CURSOR_SHAPES.find((shape) => shape.id === element.shape)?.rows ?? CURSOR_SHAPES[0].rows,
+            element.scale ?? 100,
+          );
           let motion = liveMotionRef.current.get(element.id)
             ?? createMotionState(element.row, element.column, nextLiveIdRef.current);
           if (liveDraggingRef.current.has(element.id)) {
@@ -1815,7 +1818,10 @@ export function LcdStudio() {
     const rows = frame?.rows ?? (element.type === 'clock' || element.type === 'calendar'
       ? liveTextRows(element, new Date(liveDisplayTimeRef.current || Date.now()), liveTextCacheRef.current)
       : element.type === 'mouse'
-        ? CURSOR_SHAPES.find((shape) => shape.id === element.shape)?.rows ?? CURSOR_SHAPES[0].rows
+        ? scaleBitmap(
+            CURSOR_SHAPES.find((shape) => shape.id === element.shape)?.rows ?? CURSOR_SHAPES[0].rows,
+            element.scale ?? 100,
+          )
         : ballBitmap(element.size));
     const position = expandForLiveFrame(rows, row, column);
     if (!position) return;
@@ -1835,6 +1841,22 @@ export function LcdStudio() {
     const position = expandForLiveFrame(liveTextExtentRows(next), next.row, next.column);
     if (!position) return;
     updateLiveElement(id, { ...patch, ...position } as Partial<LiveElement>);
+  }, [expandForLiveFrame, updateLiveElement]);
+
+  const updateLiveMouseElement = useCallback((
+    id: string,
+    patch: Partial<Extract<LiveElement, { type: 'mouse' }>>,
+  ) => {
+    const current = liveElementsRef.current.find((element) => element.id === id);
+    if (!current || current.type !== 'mouse') return;
+    const next = { ...current, scale: current.scale ?? 100, ...patch };
+    const rows = scaleBitmap(
+      CURSOR_SHAPES.find((shape) => shape.id === next.shape)?.rows ?? CURSOR_SHAPES[0].rows,
+      next.scale,
+    );
+    const position = expandForLiveFrame(rows, next.row, next.column);
+    if (!position) return;
+    updateLiveElement(id, { ...patch, scale: next.scale, ...position } as Partial<LiveElement>);
   }, [expandForLiveFrame, updateLiveElement]);
 
   const setLiveDragState = useCallback((id: string, dragging: boolean) => {
@@ -1866,7 +1888,7 @@ export function LcdStudio() {
       void loadPixelFont('tiny', size).then(() => liveTextCacheRef.current.clear());
     } else if (type === 'mouse') {
       rows = CURSOR_SHAPES[0].rows;
-      element = { id, type, enabled: true, shape: 'arrow', pattern: 'bounce', speed: 4, row: 0, column: 0 };
+      element = { id, type, enabled: true, shape: 'arrow', pattern: 'bounce', scale: 100, speed: 4, row: 0, column: 0 };
     } else {
       rows = ballBitmap(3);
       element = { id, type, enabled: true, size: 3, speed: 4, row: 0, column: 0 };
@@ -2918,19 +2940,29 @@ export function LcdStudio() {
                             aria-label={shape.label}
                             title={shape.label}
                             aria-pressed={selectedLiveElement.shape === shape.id}
-                            onClick={() => updateLiveElement(selectedLiveElement.id, { shape: shape.id } as Partial<LiveElement>)}
+                            onClick={() => updateLiveMouseElement(selectedLiveElement.id, { shape: shape.id })}
                           >
                             <BitmapThumbnail rows={shape.rows} background={appearance.background} pixel={appearance.pixel} inverted={false} />
                           </button>
                         ))}
                       </fieldset>
+                      <ControlSlider
+                        id="live-mouse-scale"
+                        label="Scale"
+                        value={selectedLiveElement.scale ?? 100}
+                        formattedValue={`${selectedLiveElement.scale ?? 100}%`}
+                        min={25}
+                        max={400}
+                        step={25}
+                        onChange={(scale) => updateLiveMouseElement(selectedLiveElement.id, { scale })}
+                      />
                       <label className="live-field">
                         <span>Motion</span>
                         <select value={selectedLiveElement.pattern} onChange={(event) => updateLiveElement(selectedLiveElement.id, { pattern: event.target.value as CursorPatternId } as Partial<LiveElement>)}>
                           {CURSOR_PATTERNS.map((pattern) => <option value={pattern.id} key={pattern.id}>{pattern.label}</option>)}
                         </select>
                       </label>
-                      <ControlSlider id="live-mouse-speed" label="Speed" value={selectedLiveElement.speed} formattedValue={`${selectedLiveElement.speed.toFixed(1)} cells/s`} min={0.5} max={30} step={0.5} onChange={(speed) => updateLiveElement(selectedLiveElement.id, { speed } as Partial<LiveElement>)} />
+                      <ControlSlider id="live-mouse-speed" label="Speed" value={selectedLiveElement.speed} formattedValue={`${selectedLiveElement.speed.toFixed(1)} cells/s`} min={0.5} max={120} step={0.5} onChange={(speed) => updateLiveElement(selectedLiveElement.id, { speed } as Partial<LiveElement>)} />
                     </>
                   )}
 

@@ -28,7 +28,7 @@ void test('clock and calendar formats are stable', () => {
 void test('mouse motion remains inside the bitmap rectangle', () => {
   const element: LiveMouseElement = {
     id: 'mouse', type: 'mouse', enabled: true, row: 0, column: 0,
-    shape: 'arrow', pattern: 'bounce', speed: 30,
+    shape: 'arrow', pattern: 'bounce', scale: 100, speed: 30,
   };
   const rows = ['11', '11'];
   let state = createMotionState(0, 0);
