@@ -10,7 +10,7 @@ export type CursorShapeId =
   | 'resize-horizontal'
   | 'resize-diagonal'
   | 'forbidden';
-export type CursorPatternId = 'bounce' | 'horizontal' | 'vertical' | 'perimeter' | 'wander';
+export type CursorPatternId = 'bounce' | 'horizontal' | 'vertical' | 'perimeter' | 'wander' | 'human';
 
 type LiveElementBase = {
   id: string;
@@ -67,6 +67,9 @@ export type LiveMotionState = {
   phase: number;
   randomState: number;
   turnIn: number;
+  targetRow: number;
+  targetColumn: number;
+  pauseRemaining: number;
 };
 
 export type LiveBounds = { width: number; height: number };
@@ -125,6 +128,7 @@ export const CURSOR_PATTERNS: Array<{ id: CursorPatternId; label: string }> = [
   { id: 'vertical', label: 'Vertical scan' },
   { id: 'perimeter', label: 'Perimeter' },
   { id: 'wander', label: 'Random wander' },
+  { id: 'human', label: 'Human use' },
 ];
 
 export function cursorLayers(rows: string[], invertBorder: boolean) {
@@ -209,6 +213,9 @@ export function createMotionState(row: number, column: number, seed = 1): LiveMo
     phase: 0,
     randomState: seed || 1,
     turnIn: 0.8,
+    targetRow: row,
+    targetColumn: column,
+    pauseRemaining: 0,
   };
 }
 
@@ -243,6 +250,44 @@ export function stepMouse(
   const maximumColumn = Math.max(0, bounds.width - (rows[0]?.length ?? 1));
   const distance = element.speed * deltaSeconds;
   const next = { ...state };
+
+  if (element.pattern === 'human') {
+    next.pauseRemaining = Number.isFinite(next.pauseRemaining) ? next.pauseRemaining : 0;
+    next.targetRow = Number.isFinite(next.targetRow) ? next.targetRow : next.row;
+    next.targetColumn = Number.isFinite(next.targetColumn) ? next.targetColumn : next.column;
+    if (next.pauseRemaining > 0) {
+      next.pauseRemaining = Math.max(0, next.pauseRemaining - deltaSeconds);
+      return next;
+    }
+
+    let targetDistance = Math.hypot(
+      next.targetColumn - next.column,
+      next.targetRow - next.row,
+    );
+    if (targetDistance < 0.01) {
+      next.randomState = nextRandom(next.randomState);
+      next.targetColumn = next.randomState / 0xffff_ffff * maximumColumn;
+      next.randomState = nextRandom(next.randomState);
+      next.targetRow = next.randomState / 0xffff_ffff * maximumRow;
+      targetDistance = Math.hypot(
+        next.targetColumn - next.column,
+        next.targetRow - next.row,
+      );
+    }
+
+    if (targetDistance <= distance) {
+      next.column = next.targetColumn;
+      next.row = next.targetRow;
+      next.randomState = nextRandom(next.randomState);
+      next.pauseRemaining = 0.35 + next.randomState / 0xffff_ffff * 1.4;
+      return next;
+    }
+    if (targetDistance > 0) {
+      next.column += (next.targetColumn - next.column) / targetDistance * distance;
+      next.row += (next.targetRow - next.row) / targetDistance * distance;
+    }
+    return next;
+  }
 
   if (element.pattern === 'perimeter') {
     const perimeter = Math.max(1, 2 * (maximumColumn + maximumRow));

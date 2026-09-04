@@ -40,6 +40,22 @@ void test('mouse motion remains inside the bitmap rectangle', () => {
   }
 });
 
+void test('human cursor motion picks destinations and pauses after arrival', () => {
+  const element: LiveMouseElement = {
+    id: 'human', type: 'mouse', enabled: true, row: 2, column: 2,
+    shape: 'arrow', pattern: 'human', scale: 100, invertBorder: false, speed: 100,
+  };
+  const rows = ['1'];
+  const start = createMotionState(2, 2, 42);
+  const arrived = stepMouse(element, start, rows, 1, bounds);
+  assert.ok(arrived.pauseRemaining > 0);
+  assert.notDeepEqual([arrived.row, arrived.column], [start.row, start.column]);
+  const paused = stepMouse(element, arrived, rows, 0.1, bounds);
+  assert.equal(paused.row, arrived.row);
+  assert.equal(paused.column, arrived.column);
+  assert.ok(paused.pauseRemaining < arrived.pauseRemaining);
+});
+
 void test('cursor border inversion separates edge and interior pixels', () => {
   const layers = cursorLayers(['111', '111', '111'], true);
   assert.deepEqual(layers.rows, ['000', '010', '000']);
