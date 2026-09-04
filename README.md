@@ -29,6 +29,8 @@ Then open [localhost:3000](http://localhost:3000).
 
 The project includes four large 320 × 200, true 1-bit PNGs for testing detailed LCD artwork:
 
+They are drawn directly on the target pixel grid and can be reproduced with `npm run generate:demos`.
+
 | UNIX workstation | Retro gaming |
 | --- | --- |
 | ![UNIX workstation demo](public/demos/unix-workstation.png) | ![Retro gaming demo](public/demos/retro-gaming.png) |

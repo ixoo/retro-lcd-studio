@@ -35,7 +35,7 @@ export type LcdAppearance = {
 };
 
 export type LcdCanvasHandle = {
-  resetView: () => void;
+  resetView: (bitmap?: string[], bitmapOffsetCells?: [number, number]) => void;
   exportPng: () => Promise<Blob | null>;
   setLiveFrames: (frames: LiveSpriteFrame[]) => void;
 };
@@ -608,15 +608,18 @@ export const LcdCanvas = forwardRef<LcdCanvasHandle, LcdCanvasProps>(
       });
     };
 
-    const fitView = () => {
+    const fitView = (
+      nextBitmap = bitmapRef.current,
+      nextBitmapOffset = bitmapOffsetRef.current,
+    ) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const bounds = canvas.getBoundingClientRect();
-      const width = Math.max(bitmapRef.current[0]?.length ?? 1, 1);
-      const height = Math.max(bitmapRef.current.length, 1);
+      const width = Math.max(nextBitmap[0]?.length ?? 1, 1);
+      const height = Math.max(nextBitmap.length, 1);
       const pitchXMm = appearanceRef.current.pixelWidthMm + appearanceRef.current.gapMm;
       const pitchYMm = appearanceRef.current.pixelHeightMm + appearanceRef.current.gapMm;
-      const offset = bitmapOffsetRef.current;
+      const offset = nextBitmapOffset;
       const centerXMm = (offset[0] + width * 0.5) * pitchXMm;
       const centerYMm = -(offset[1] + height * 0.5) * pitchYMm;
       const horizontalPadding = Math.min(96, bounds.width * 0.2);

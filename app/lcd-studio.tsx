@@ -2432,8 +2432,9 @@ export function LcdStudio() {
     const parsed = parseBitmap(source);
     if (!parsed.rows) throw new Error(parsed.error);
     clearLiveElements();
-    replaceBitmap(parsed.rows, true, centeredBitmapOffset(parsed.rows));
-    canvasRef.current?.resetView();
+    const offset = centeredBitmapOffset(parsed.rows);
+    replaceBitmap(parsed.rows, true, offset);
+    canvasRef.current?.resetView(parsed.rows, offset);
     setActionStatus('Bitmap loaded by browser tool');
     await nextFrame();
     return {
@@ -2522,8 +2523,9 @@ export function LcdStudio() {
     try {
       const rows = await imageFileToBitmap(file);
       clearLiveElements();
-      replaceBitmap(rows, true, centeredBitmapOffset(rows));
-      canvasRef.current?.resetView();
+      const offset = centeredBitmapOffset(rows);
+      replaceBitmap(rows, true, offset);
+      canvasRef.current?.resetView(rows, offset);
       setActionStatus(`${file.name} imported · ${rows[0].length} × ${rows.length} · 1:1`);
     } catch (error) {
       console.error('Unable to import the image.', error);
