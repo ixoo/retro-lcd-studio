@@ -40,8 +40,8 @@ jobs:
 
       - name: Prepare GitHub Pages artifact
         run: |
-          mv dist/client/retro-lcd-render/_next dist/client/_next
-          rmdir dist/client/retro-lcd-render
+          mv dist/client/retro-lcd-studio/_next dist/client/_next
+          rmdir dist/client/retro-lcd-studio
           touch dist/client/.nojekyll
 
       - name: Upload GitHub Pages artifact

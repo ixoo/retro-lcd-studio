@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Retro LCD Renderer',
+  title: 'Retro LCD Studio',
   description:
-    'Render and edit monochrome bitmaps on an infinite retro LCD surface.',
+    'Create and render monochrome pixel art on an infinite retro LCD surface.',
 };
 
 export default function RootLayout({

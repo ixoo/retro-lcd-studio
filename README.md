@@ -1,10 +1,10 @@
-# Retro LCD Render
+# Retro LCD Studio
 
-A small WebGPU playground for rendering crisp monochrome bitmaps like a classic LCD.
+A tactile WebGPU pixel studio for creating and rendering crisp monochrome artwork like a classic LCD.
 
 Shape the pixels in physical millimetres, tune their spacing and shadow, try a few display palettes, tilt the infinite screen, or switch to Edit mode and draw directly on it.
 
-**[Open Retro LCD Render →](https://ixoo.github.io/retro-lcd-render/)**
+**[Open Retro LCD Studio →](https://ixoo.github.io/retro-lcd-studio/)**
 
 ## Run it locally
 

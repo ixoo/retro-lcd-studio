@@ -1875,7 +1875,7 @@ export function LcdStudio() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `retro-lcd-${bitmapRef.current[0].length}x${bitmapRef.current.length}.png`;
+      link.download = `retro-lcd-studio-${bitmapRef.current[0].length}x${bitmapRef.current.length}.png`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       setActionStatus('PNG saved');
@@ -2061,7 +2061,7 @@ export function LcdStudio() {
         id="controls-panel"
         className="controls-panel"
       >
-        <h1 className="sr-only">Retro LCD studio</h1>
+        <h1 className="sr-only">Retro LCD Studio</h1>
         <div className="panel-section appearance-section">
           <section className="control-group controls-group" aria-labelledby="controls-heading">
             <h2 id="controls-heading">Controls</h2>
