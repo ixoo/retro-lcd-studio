@@ -732,6 +732,17 @@ function scaleBitmap(rows: string[], scalePercent: number) {
   });
 }
 
+function rotateBitmapClockwise(rows: string[]) {
+  const sourceHeight = Math.max(1, rows.length);
+  const sourceWidth = Math.max(1, rows[0]?.length ?? 1);
+
+  return Array.from({ length: sourceWidth }, (_, targetRow) => (
+    Array.from({ length: sourceHeight }, (_, targetColumn) => (
+      rows[sourceHeight - targetColumn - 1]?.[targetRow] === '1' ? '1' : '0'
+    )).join('')
+  ));
+}
+
 function bitmapFramesMatch(first: BitmapFrame, second: BitmapFrame) {
   return bitmapsMatch(first.rows, second.rows)
     && first.offsetCells[0] === second.offsetCells[0]
@@ -1570,6 +1581,7 @@ export function LcdStudio() {
   const [editTool, setEditTool] = useState<LcdEditTool>('pen');
   const [selectedSpriteId, setSelectedSpriteId] = useState(CLIPBOARD_SPRITE_ID);
   const [stampScalePercent, setStampScalePercent] = useState(100);
+  const [stampQuarterTurns, setStampQuarterTurns] = useState(0);
   const [selectedFontId, setSelectedFontId] = useState<PixelFontId>('terminal');
   const [textPixelSize, setTextPixelSize] = useState(12);
   const [textValue, setTextValue] = useState('');
@@ -1598,8 +1610,12 @@ export function LcdStudio() {
     const source = selectedSpriteId === CLIPBOARD_SPRITE_ID
       ? clipboardBitmap ?? ['0']
       : SPRITE_BITMAPS.find((sprite) => sprite.id === selectedSpriteId)?.rows ?? SPRITE_BITMAPS[0].rows;
-    return scaleBitmap(source, stampScalePercent);
-  }, [clipboardBitmap, selectedSpriteId, stampScalePercent]);
+    let transformed = scaleBitmap(source, stampScalePercent);
+    for (let turn = 0; turn < stampQuarterTurns; turn += 1) {
+      transformed = rotateBitmapClockwise(transformed);
+    }
+    return transformed;
+  }, [clipboardBitmap, selectedSpriteId, stampQuarterTurns, stampScalePercent]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setHiddenGestureHintContext(`${mode}:${editTool}:${gestureHintRevision}`), 10_000);
@@ -1965,6 +1981,12 @@ export function LcdStudio() {
   const nudgeStampScale = useCallback((steps: number) => {
     changeStampScale(stampScaleRef.current + steps * 25);
   }, [changeStampScale]);
+
+  const rotateStamp = useCallback(() => {
+    const next = (stampQuarterTurns + 1) % 4;
+    setStampQuarterTurns(next);
+    setActionStatus(`Stamp rotation: ${next * 90}°`);
+  }, [stampQuarterTurns]);
 
   const replaceBitmap = useCallback((next: string[], recordHistory = true, nextOffsetCells = bitmapOffsetRef.current) => {
     const current = bitmapRef.current;
@@ -2351,7 +2373,7 @@ export function LcdStudio() {
         || editTool === 'ellipse'
         || editTool === 'polygon';
       if (!event.repeat && mode === 'edit' && hasSpecialKeyHint
-        && (event.key === 'Shift' || event.key === 'Enter' || event.key === 'Escape')) {
+        && (event.key === 'Shift' || event.key === 'Enter' || event.key === 'Escape' || event.key.toLowerCase() === 'r')) {
         setGestureHintRevision((revision) => revision + 1);
       }
       if (event.key === 'Escape' && mode !== 'view') {
@@ -2372,6 +2394,11 @@ export function LcdStudio() {
         return;
       }
       if (isTyping || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (!event.repeat && mode === 'edit' && editTool === 'stamp' && event.key.toLowerCase() === 'r') {
+        event.preventDefault();
+        rotateStamp();
+        return;
+      }
       if (event.key.toLowerCase() === 'v') chooseMode('view');
       if (event.key.toLowerCase() === 'e') chooseMode('edit');
       if (event.key.toLowerCase() === 'l') chooseMode('live');
@@ -2379,7 +2406,7 @@ export function LcdStudio() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [chooseMode, commitPolygon, editTool, mode, polygonPoints.length, redo, undo]);
+  }, [chooseMode, commitPolygon, editTool, mode, polygonPoints.length, redo, rotateStamp, undo]);
 
   const loadBitmapAction = useCallback(async (source: string) => {
     const parsed = parseBitmap(source);
@@ -3152,7 +3179,7 @@ export function LcdStudio() {
             </>
           ) : editTool === 'stamp' ? (
             <>
-              <span className="mouse-gesture-hint"><strong>Click</strong> stamp · <strong>Shift+Scroll</strong> scale · <strong>Scroll</strong> zoom · <strong>Esc</strong> view</span>
+              <span className="mouse-gesture-hint"><strong>Click</strong> stamp · <strong>R</strong> rotate · <strong>Shift+Scroll</strong> scale · <strong>Scroll</strong> zoom · <strong>Esc</strong> view</span>
               <span className="touch-gesture-hint"><strong>Tap</strong> stamp · <strong>2 fingers</strong> move, zoom &amp; rotate</span>
             </>
           ) : editTool === 'line' ? (
