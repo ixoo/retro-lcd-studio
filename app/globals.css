@@ -819,8 +819,6 @@
 .live-master-actions,
 .live-element-row,
 .live-element-select,
-.live-position,
-.live-position label,
 .live-field {
   display: flex;
   align-items: center;
@@ -939,8 +937,7 @@
   font-size: 0.8rem;
 }
 
-.live-field select,
-.live-position input {
+.live-field select {
   min-width: 0;
   height: 2rem;
   border: 1px solid #424b44;
@@ -982,35 +979,6 @@
   display: block;
   width: 100%;
   height: 3rem;
-}
-
-.live-position {
-  gap: 0.5rem;
-  padding-top: 0.8rem;
-  border-top: 1px solid #303832;
-}
-
-.live-position label {
-  min-width: 0;
-  flex: 1;
-  gap: 0.35rem;
-  color: #8f998f;
-  font-size: 0.7rem;
-}
-
-.live-position input {
-  width: 100%;
-  padding: 0 0.45rem;
-}
-
-.live-warning {
-  padding: 0.55rem 0.65rem;
-  border: 1px solid #6f6334;
-  border-radius: 0.45rem;
-  color: #e6d991;
-  background: #302d1f;
-  font-size: 0.7rem;
-  line-height: 1.4;
 }
 
 .status-announcer {

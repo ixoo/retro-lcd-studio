@@ -1274,6 +1274,28 @@ function autoFitLiveText(
   return best;
 }
 
+function liveTextExtentRows(element: Extract<LiveElement, { type: 'clock' | 'calendar' }>) {
+  const samples = element.type === 'clock'
+    ? element.format === '24-short'
+      ? ['00:00', '23:59', '88:88']
+      : element.format === '24-seconds'
+        ? ['00:00:00', '23:59:59', '88:88:88']
+        : element.format === '12-short'
+          ? ['00:00 AM', '11:59 PM', '88:88 WM']
+          : ['00:00:00 AM', '11:59:59 PM', '88:88:88 WM']
+    : element.format === 'weekday'
+      ? ['Wed, Sep 30', 'WWW, WWW 88']
+      : element.format === 'month-name'
+        ? ['Sep 30, 2026', 'WWW 88, 8888']
+        : ['00/00/0000', '88/88/8888'];
+  const bitmaps = samples.map((sample) => (
+    rasterizePixelText(sample, element.fontId as PixelFontId, element.size)
+  ));
+  const width = Math.max(1, ...bitmaps.flatMap((rows) => rows.map((row) => row.length)));
+  const height = Math.max(1, ...bitmaps.map((rows) => rows.length));
+  return Array<string>(height).fill('0'.repeat(width));
+}
+
 function lineCells(start: Cell, end: Cell) {
   const cells: Cell[] = [];
   let x = start.column;
@@ -1544,7 +1566,6 @@ export function LcdStudio() {
   const [selectedLiveElementId, setSelectedLiveElementId] = useState<string | null>(null);
   const [livePaused, setLivePaused] = useState(false);
   const [liveAddOpen, setLiveAddOpen] = useState(false);
-  const [liveOverflowIds, setLiveOverflowIds] = useState<Set<string>>(() => new Set());
   const [editTool, setEditTool] = useState<LcdEditTool>('pen');
   const [selectedSpriteId, setSelectedSpriteId] = useState(CLIPBOARD_SPRITE_ID);
   const [stampScalePercent, setStampScalePercent] = useState(100);
@@ -1803,6 +1824,19 @@ export function LcdStudio() {
     if (motion) liveMotionRef.current.set(id, { ...motion, ...position });
   }, [expandForLiveFrame, updateLiveElement]);
 
+  const updateLiveTextElement = useCallback((
+    id: string,
+    patch: Partial<Extract<LiveElement, { type: 'clock' | 'calendar' }>>,
+  ) => {
+    const current = liveElementsRef.current.find((element) => element.id === id);
+    if (!current || (current.type !== 'clock' && current.type !== 'calendar')) return;
+    const next = { ...current, ...patch } as Extract<LiveElement, { type: 'clock' | 'calendar' }>;
+    liveTextCacheRef.current.clear();
+    const position = expandForLiveFrame(liveTextExtentRows(next), next.row, next.column);
+    if (!position) return;
+    updateLiveElement(id, { ...patch, ...position } as Partial<LiveElement>);
+  }, [expandForLiveFrame, updateLiveElement]);
+
   const setLiveDragState = useCallback((id: string, dragging: boolean) => {
     if (dragging) liveDraggingRef.current.add(id);
     else liveDraggingRef.current.delete(id);
@@ -1838,11 +1872,14 @@ export function LcdStudio() {
       element = { id, type, enabled: true, size: 3, speed: 4, row: 0, column: 0 };
     }
 
+    const requiredRows = element.type === 'clock' || element.type === 'calendar'
+      ? liveTextExtentRows(element)
+      : rows;
     const preferred = {
-      row: Math.round((height - rows.length) / 2),
-      column: Math.round((width - (rows[0]?.length ?? 1)) / 2),
+      row: Math.round((height - requiredRows.length) / 2),
+      column: Math.round((width - (requiredRows[0]?.length ?? 1)) / 2),
     };
-    const expandedPosition = expandForLiveFrame(rows, preferred.row, preferred.column);
+    const expandedPosition = expandForLiveFrame(requiredRows, preferred.row, preferred.column);
     if (!expandedPosition) return;
     const expandedWidth = bitmapRef.current[0]?.length ?? 1;
     const expandedHeight = bitmapRef.current.length || 1;
@@ -1882,25 +1919,6 @@ export function LcdStudio() {
     () => liveElements.find((element) => element.id === selectedLiveElementId) ?? null,
     [liveElements, selectedLiveElementId],
   );
-  const selectedLiveTextOverflow = selectedLiveElement
-    && (selectedLiveElement.type === 'clock' || selectedLiveElement.type === 'calendar')
-    && liveOverflowIds.has(selectedLiveElement.id);
-
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      const date = new Date();
-      const overflowIds = new Set<string>();
-      liveElements.forEach((element) => {
-        if (element.type !== 'clock' && element.type !== 'calendar') return;
-        const rows = liveTextRows(element, date, liveTextCacheRef.current);
-        if (rows.length > bitmap.length || (rows[0]?.length ?? 0) > (bitmap[0]?.length ?? 1)) {
-          overflowIds.add(element.id);
-        }
-      });
-      setLiveOverflowIds(overflowIds);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [bitmap, liveElements]);
 
   const chooseEditTool = (nextTool: LcdEditTool) => {
     if (nextTool !== 'text') stopTextSession();
@@ -2826,40 +2844,67 @@ export function LcdStudio() {
                         <span>Format</span>
                         <select
                           value={selectedLiveElement.format}
-                          onChange={(event) => updateLiveElement(selectedLiveElement.id, {
+                          onChange={(event) => updateLiveTextElement(selectedLiveElement.id, {
                             format: event.target.value as ClockFormat | CalendarFormat,
-                          } as Partial<LiveElement>)}
+                          })}
                         >
                           {(selectedLiveElement.type === 'clock' ? CLOCK_FORMATS : CALENDAR_FORMATS).map((format) => (
                             <option value={format.id} key={format.id}>{format.label}</option>
                           ))}
                         </select>
                       </label>
-                      <label className="live-field">
-                        <span>Font</span>
-                        <select
-                          value={selectedLiveElement.fontId}
-                          onChange={(event) => {
-                            const fontId = event.target.value as PixelFontId;
-                            void loadPixelFont(fontId, selectedLiveElement.size)
-                              .then(() => liveTextCacheRef.current.clear());
-                            updateLiveElement(selectedLiveElement.id, { fontId } as Partial<LiveElement>);
-                          }}
-                        >
-                          {PIXEL_FONTS.map((font) => <option value={font.id} key={font.id}>{font.label}</option>)}
-                        </select>
-                      </label>
-                      <ControlSlider
-                        id="live-text-size"
-                        label="Size"
-                        value={selectedLiveElement.size}
-                        formattedValue={`${selectedLiveElement.size}px`}
-                        min={MIN_TEXT_PIXEL_SIZE}
-                        max={MAX_TEXT_PIXEL_SIZE}
-                        step={1}
-                        onChange={(size) => updateLiveElement(selectedLiveElement.id, { size } as Partial<LiveElement>)}
-                      />
-                      {selectedLiveTextOverflow && <p className="live-warning">This text is larger than the bitmap and will be centered and clipped.</p>}
+                      <fieldset className="font-picker live-font-picker" aria-label="Pixel font">
+                        {PIXEL_FONTS.map((font) => (
+                          <button
+                            type="button"
+                            className="font-choice"
+                            key={font.id}
+                            aria-pressed={selectedLiveElement.fontId === font.id}
+                            onClick={() => {
+                              updateLiveTextElement(selectedLiveElement.id, { fontId: font.id });
+                              void loadPixelFont(font.id, selectedLiveElement.size)
+                                .then(() => updateLiveTextElement(selectedLiveElement.id, { fontId: font.id }));
+                            }}
+                          >
+                            <PixelFontThumbnail fontId={font.id} background={appearance.background} pixel={appearance.pixel} />
+                            <span>{font.label}</span>
+                          </button>
+                        ))}
+                      </fieldset>
+                      <div className="control-slider text-size-control">
+                        <span>
+                          <label htmlFor="live-text-size-input">Size</label>
+                          <span className="text-size-value">
+                            <input
+                              id="live-text-size-input"
+                              type="number"
+                              min={MIN_TEXT_PIXEL_SIZE}
+                              max={MAX_TEXT_PIXEL_SIZE}
+                              step={1}
+                              value={selectedLiveElement.size}
+                              aria-label="Live text size in pixels"
+                              onChange={(event) => {
+                                if (!Number.isFinite(event.target.valueAsNumber)) return;
+                                updateLiveTextElement(selectedLiveElement.id, {
+                                  size: Math.min(MAX_TEXT_PIXEL_SIZE, Math.max(MIN_TEXT_PIXEL_SIZE, Math.round(event.target.valueAsNumber))),
+                                });
+                              }}
+                            />
+                            px
+                          </span>
+                        </span>
+                        <Slider
+                          id="live-text-size-slider"
+                          aria-label="Live text size"
+                          value={[selectedLiveElement.size]}
+                          min={MIN_TEXT_PIXEL_SIZE}
+                          max={MAX_TEXT_PIXEL_SIZE}
+                          step={1}
+                          onValueChange={(value) => updateLiveTextElement(selectedLiveElement.id, {
+                            size: firstSliderValue(value),
+                          })}
+                        />
+                      </div>
                     </>
                   )}
 
@@ -2895,11 +2940,6 @@ export function LcdStudio() {
                       <ControlSlider id="live-ball-speed" label="Speed" value={selectedLiveElement.speed} formattedValue={`${selectedLiveElement.speed.toFixed(1)} cells/s`} min={0.5} max={30} step={0.5} onChange={(speed) => updateLiveElement(selectedLiveElement.id, { speed } as Partial<LiveElement>)} />
                     </>
                   )}
-
-                  <div className="live-position">
-                    <label><span>Column</span><input type="number" value={selectedLiveElement.column} onChange={(event) => moveLiveElement(selectedLiveElement.id, selectedLiveElement.row, event.target.valueAsNumber)} /></label>
-                    <label><span>Row</span><input type="number" value={selectedLiveElement.row} onChange={(event) => moveLiveElement(selectedLiveElement.id, event.target.valueAsNumber, selectedLiveElement.column)} /></label>
-                  </div>
                 </div>
               )}
             </section>
